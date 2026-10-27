@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orchestra · Outbox</title>
+<link rel="stylesheet" href="/static/style.css?v={{v}}">
+<link rel="stylesheet" href="/plugins/outbox/static/outbox.css?v={{v}}">
+</head>
+<body>
+<nav id="nav"><a href="/">Dashboard</a><a href="/machines">Machines</a><a href="/dynamics">Dynamics</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
+<main class="ob-page">
+  <header class="ob-head">
+    <h1>Outbox</h1>
+    <p class="muted">Nothing is sent as you until you approve it here, unless a kind is set to <code>auto</code> in <code>[outbox.kinds]</code>. Approving sends; rejecting tells the machine that drafted it why.</p>
+    <div id="ob-status" class="ob-status"></div>
+  </header>
+  <h2>Waiting for you <span class="count" id="ob-nwait"></span></h2>
+  <div id="ob-waiting"></div>
+  <h2>Recent <span class="count" id="ob-nrecent"></span></h2>
+  <div id="ob-recent"></div>
+  <h2>Kinds</h2>
+  <div id="ob-kinds"></div>
+  <h2>Audit log <span class="hctl muted">what the bus carries: metadata, never the text</span></h2>
+  <div id="ob-audit"></div>
+</main>
+<div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
+<script src="/static/app.js?v={{v}}"></script>
+<script src="/plugins/outbox/static/outbox.js?v={{v}}"></script>
+</body>
+</html>
