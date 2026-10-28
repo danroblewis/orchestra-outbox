@@ -10,8 +10,11 @@ sends (``machine.py``).
 - ``POST /drafts/<id>/reject``, ``{"reason": <code>, "note": "..."}``: reject; the reason code goes
   on the bus to the drafter, the note only to the record, where the drafter reads it.
 
-Both writes need ``Content-Type: application/json``, which a page of another site cannot send
-without the browser asking first, so a link or a form elsewhere cannot approve."""
+Every route is behind Orchestra's web login (its ``orchestra/web/auth.py``): a request gets here only
+with the owner's session cookie or the web token as a bearer, and a write carried by the cookie
+only from Orchestra's own origin. Both writes also need ``Content-Type: application/json``, which a
+page of another site cannot send without the browser asking first: a second check, not the only
+one."""
 
 from __future__ import annotations
 

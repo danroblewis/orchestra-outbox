@@ -31,6 +31,13 @@ uv run ruff check
 To use it with a project, run `orchestra run` and `orchestra web` from this environment (or install
 it into the environment that runs Orchestra: `uv tool install ~/orchestra_2 --with ~/orchestra-outbox`).
 
+Only someone logged in to Orchestra's web UI approves. The Outbox page and its API are behind
+`orchestra web`'s login (the project's web token: open the link `orchestra web` prints, or paste
+`orchestra web token` into its login page), and an approval or rejection carried by the browser's
+session must come from Orchestra's own pages: a form or a script on another site gets `403`. A
+program that approves for you would send `Authorization: Bearer <web token>`; nothing in the
+outbox does.
+
 ## Configure
 
 In the project's `orchestra.toml`:

@@ -11,7 +11,8 @@ broken without updating the spec and saying so in the commit. Orchestra's own ru
    Never add a default, a heuristic or a code path that loosens it: autonomy is the owner's
    configuration, set by asking the Supervisor. An `auto` kind never sends over its limit.
 2. **This plugin is the human path that changes the system** (Orchestra's rule 9). The Outbox
-   page and its API (`web.py`) are the owner's way to approve, edit and reject drafts. That is the
+   page and its API (`web.py`) are the owner's way to approve, edit and reject drafts, behind
+   Orchestra's web login (never add a route or a server that is reached without it). That is the
    only human write here. The page never sends and never holds a token: it writes the decision to
    the record, and the outbox machine acts on it.
 3. **No content on the bus, in the metrics or in a log.** Events, series, log lines and errors

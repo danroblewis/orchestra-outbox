@@ -50,9 +50,10 @@ def stop(host):
 def test_orchestra_run_keeps_the_outbox_and_a_draft_is_sent_once(make_project, slack):
     from fastapi.testclient import TestClient
     from orchestra.web.app import create_app
+    from orchestra.web.auth import bearer
 
     project = make_project(port=free_port())
-    web = TestClient(create_app(project))
+    web = TestClient(create_app(project), headers=bearer(project))
     host = start(project)
     try:
         client = wait_for(lambda: OutboxClient.for_project(project, drafter="worker/1"))

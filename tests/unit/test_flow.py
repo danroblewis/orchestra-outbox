@@ -118,3 +118,34 @@ def test_the_api_needs_the_projects_token(machine):
         assert e.status == 401
     else:
         raise AssertionError("taken without the token")
+
+
+def test_the_owner_logged_in_in_a_browser_approves_and_rejects_from_the_page_only(project, machine, drafter):
+    """The page's writes as a browser sends them: Orchestra's session cookie, and the page's own
+    origin. Without a login, or from another site, they never reach the outbox."""
+    from fastapi.testclient import TestClient
+    from orchestra.web.app import create_app
+    from orchestra.web.auth import token
+
+    browser = TestClient(create_app(project))
+    one = drafter.draft("pr.comment", target={"repo": "acme/widgets", "number": 7}, content="x")
+    two = drafter.draft("pr.comment", target={"repo": "acme/widgets", "number": 8}, content="y")
+    url = f"/api/plugins/outbox/drafts/{one['id']}/approve"
+    assert browser.post(url, json={}, headers={"Origin": "http://testserver"}).status_code == 401      # not logged in
+
+    page = {"Origin": "http://testserver"}                                      # what a fetch from /outbox sends
+    r = browser.post("/login", data={"token": token(project), "next": "/outbox"}, headers=page, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/outbox"
+    assert browser.get("/api/plugins/outbox/state").json()["waiting"]          # a read needs only the session
+
+    assert browser.post(url, json={}).status_code == 403                                               # no origin
+    assert browser.post(url, json={}, headers={"Origin": "https://elsewhere.example"}).status_code == 403
+    assert browser.post(url, json={}, headers={**page, "Sec-Fetch-Site": "cross-site"}).status_code == 403
+    assert browser.post(url, data={"content": "z"}, headers=page).status_code == 415                  # the outbox's own check still holds
+    assert drafter.get(one["id"])["state"] == "drafted"
+
+    r = browser.post(url, json={}, headers={**page, "Sec-Fetch-Site": "same-origin"})
+    assert r.status_code == 200 and r.json()["draft"]["state"] == "approved"
+    r = browser.post(f"/api/plugins/outbox/drafts/{two['id']}/reject", json={"reason": "timing"},
+                     headers={"Referer": "http://testserver/outbox"})
+    assert r.status_code == 200 and r.json()["draft"]["state"] == "rejected"

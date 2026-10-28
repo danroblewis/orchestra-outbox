@@ -27,7 +27,7 @@ flowchart LR
     OWNER(["the owner"])
 
     W -- "HTTP + project token" --> API --> SVC --> DB
-    OWNER --> PAGE --> WAPI -- "approve / reject" --> DB
+    OWNER -- "logged in to orchestra web" --> PAGE --> WAPI -- "approve / reject" --> DB
     DIS -- "approved drafts" --> DB
     DIS --> SND -- "as the owner" --> EXT
     AUD -- "unpublished rows" --> DB

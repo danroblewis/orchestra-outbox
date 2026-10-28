@@ -128,8 +128,9 @@ def machine(project):
 def web(project):
     from fastapi.testclient import TestClient
     from orchestra.web.app import create_app
+    from orchestra.web.auth import bearer
 
-    return TestClient(create_app(project))
+    return TestClient(create_app(project), headers=bearer(project))
 
 
 @pytest.fixture

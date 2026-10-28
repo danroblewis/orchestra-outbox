@@ -262,6 +262,15 @@ The page's API: `GET /api/plugins/outbox/state`; `POST /api/plugins/outbox/draft
 `{"content"?}`; `POST .../reject` `{"reason", "note"?}`. The writes need `Content-Type:
 application/json`; `409` when the draft was decided already.
 
+**Who can reach it.** The page, the API and the static files are behind Orchestra's web login
+(Orchestra's SPEC §10.2, PLUGINS.md §4.4.1): a request reaches `web.py` only with the browser's
+session cookie or `Authorization: Bearer <the web token>` (`orchestra web token`; not the events
+token the drafters use, §3). A `POST` carried by the cookie must also name Orchestra's own origin
+(`Origin` or `Referer`, and no cross-site `Sec-Fetch-Site`), or Orchestra answers `403` before the
+outbox sees it; a `fetch` from the page sends it by itself. The outbox's own JSON check stays: it
+adds to Orchestra's and replaces nothing. `tests/unit/test_flow.py` approves and rejects as a
+logged-in browser does.
+
 The web server writes the decision to the record and nothing else: it holds no token and sends
 nothing. The outbox machine publishes the decision and sends.
 
