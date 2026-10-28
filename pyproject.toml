@@ -7,8 +7,8 @@ name = "orchestra-outbox"
 version = "0.1.0"
 description = "The Outbox for Orchestra: drafts that machines write and the owner approves before anything is sent as the owner, with per-kind autonomy, per-recipient limits, senders per system and a metadata-only audit on the bus."
 requires-python = ">=3.12"
-# orchestra: ours is 1.0.0a1; <1.0.0 keeps out the unrelated `orchestra` on PyPI (1.0.0 and up)
-dependencies = ["orchestra>=1.0.0a1,<1.0.0", "fastapi>=0.115"]
+# orchestra: ours is 1.0.0a1; <1.0.0rc0 keeps out the unrelated `orchestra` on PyPI (1.0.0 and up)
+dependencies = ["orchestra>=1.0.0a1,<1.0.0rc0", "fastapi>=0.115"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "httpx>=0.27", "ruff>=0.6"]
@@ -19,10 +19,12 @@ outbox = "orchestra_outbox.plugin:plugin"
 [project.entry-points."orchestra.commands"]
 outbox = "orchestra_outbox.check:main"
 
-[tool.uv.sources]
-# This repository's own environment takes Orchestra from GitHub (README, "Developing against a local Orchestra");
-# ignored when the plugin is installed as a dependency.
-orchestra = { git = "https://github.com/danroblewis/orchestra", branch = "main" }
+[tool.uv]
+# This repository's own environment takes Orchestra's main from GitHub (README, "Developing against a
+# local Orchestra"). Read only at the root: installed as a dependency, the plugin takes the Orchestra
+# it is installed with ([tool.uv.sources] would not do: uv applies a git dependency's sources).
+# An override replaces every orchestra requirement, extras too, so it names the dev extra's.
+override-dependencies = ["orchestra @ git+https://github.com/danroblewis/orchestra@main"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["orchestra_outbox"]
