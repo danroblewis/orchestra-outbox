@@ -16,7 +16,7 @@ from orchestra.launcher import Process
 from orchestra.plugins import Declared, Page, Plugin
 
 from . import MACHINE, PACKAGE
-from .config import DEFAULT_PORT, section
+from .config import DEFAULT_PORT, problems, section
 
 STATIC = Path(__file__).parent / "static"
 STOP_GRACE_S = 15.0           # a send cut short stays "sending" and is found, or tried again, after a restart
@@ -52,4 +52,5 @@ def plugin(project) -> Plugin:
         processes=processes(project),
         collectors=collectors(project),
         guide=Path(__file__).parent / "guide.md",   # how to configure it, for an AI operator (/api/guides)
+        check=lambda raw, repo_root: problems(raw, repo_root)[1],   # what project.config_edit refuses in [outbox]
     )

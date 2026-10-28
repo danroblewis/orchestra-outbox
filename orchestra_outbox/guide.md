@@ -52,9 +52,11 @@ page and does nothing.
 
 ## Checking a change
 
-`project.config_edit` validates the merged configuration with the plugin's check,
-`orchestra_outbox.config.problems(raw, repo_root)`. It returns `(settings, errors)`. Each error is
-one sentence that names the key, and every error is reported at once. Errors are what the machine
+`project.config_edit` validates the merged configuration with the plugin's check
+(`Plugin.check`: the errors of `orchestra_outbox.config.problems(raw, repo_root)`) by itself, on
+every change: pass no `check=`. A refusal starts with `outbox:`. `problems` returns
+`(settings, errors)`. Each error is one sentence that names the key, and every error is reported
+at once. An absent `[outbox]` is no problem, so removing it is allowed (that is the human's call). Errors are what the machine
 would refuse to start with. If the running machine rereads a file that fails, it logs the error and
 keeps the last good version, so a bad edit silently changes nothing.
 

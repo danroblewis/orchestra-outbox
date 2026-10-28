@@ -27,7 +27,7 @@ import tomllib
 from pathlib import Path
 
 from . import actions as X
-from .config import problems
+from .config import NO_SECTION, problems
 from .senders.script import argv
 
 EXAMPLE = Path(__file__).parent / "examples" / "owner-kinds.toml"
@@ -64,6 +64,7 @@ def warnings(s, repo_root: Path) -> list[str]:
 def check(raw: dict, repo_root: Path) -> dict:
     s, errors = problems(raw, repo_root)
     if s is None:
+        errors = errors or [NO_SECTION]
         return {"ok": False, "errors": errors, "warnings": [], "kinds": {}}
     return {"ok": True, "errors": [], "warnings": warnings(s, repo_root), "owner": s.owner, "owner_from": s.owner_from,
             "kinds": {k.name: {"sender": k.sender, "approval": k.approval, "limit": k.limit, "per": k.per,

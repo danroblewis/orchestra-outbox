@@ -117,3 +117,16 @@ def test_the_specs_example_configuration_passes_the_check():
     assert out["ok"], out["errors"]
     assert out["kinds"]["review.ping"] == {"sender": "slack.reply", "approval": "auto", "limit": 1, "per": 86400.0,
                                            "ping": True, "action": "slack.post"}
+
+
+def test_no_outbox_section_is_no_problem_for_the_plugin_check(tmp_path):
+    """Plugin.check judges only [outbox], and its absence is fine: config_edit may remove it."""
+    from orchestra.config import Config, Project
+
+    from orchestra_outbox.config import problems as reader
+    from orchestra_outbox.plugin import plugin
+
+    assert reader({}) == (None, [])
+    check = plugin(Project("k", tmp_path, Config.from_toml(""))).check
+    assert check({}, tmp_path) == []
+    assert any("sender must be one of" in e for e in check(tomllib.loads('[outbox]\n[outbox.kinds."x.y"]\nsender = "x"\n'), None))

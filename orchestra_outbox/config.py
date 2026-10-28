@@ -272,13 +272,18 @@ def _owner(s: dict, raw: dict, repo_root: Path | None, accounts: Accounts) -> tu
     return DEFAULT_OWNER, "default"
 
 
+NO_SECTION = "orchestra.toml has no [outbox] section"
+
+
 def problems(raw: dict[str, Any], repo_root: Path | None = None,
              accounts: Accounts | None = None) -> tuple[Settings | None, list[str]]:
     """The settings, and every problem found (each a sentence); settings is None when any.
-    ``accounts`` is the owner's shared accounts file (default: read it now, ``accounts.py``)."""
+    ``accounts`` is the owner's shared accounts file (default: read it now, ``accounts.py``). With
+    no ``[outbox]`` there is no problem (and no settings): this is also the plugin's
+    ``Plugin.check``, which judges only the Outbox's own section, so removing it is allowed."""
     s = section(raw)
     if s is None:
-        return None, ["orchestra.toml has no [outbox] section"]
+        return None, []
     errors: list[str] = []
     if accounts is None:
         try:
@@ -331,6 +336,8 @@ def settings(raw: dict[str, Any], repo_root: Path | None = None, accounts: Accou
     got, errors = problems(raw, repo_root, accounts)
     if errors:
         raise ConfigError("; ".join(errors))
+    if got is None:
+        raise ConfigError(NO_SECTION)
     return got
 
 
