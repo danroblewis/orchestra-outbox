@@ -231,6 +231,9 @@ def kind(name: str, s: object, systems: dict[str, System]) -> Kind:
     approval = s.get("approval", "always")
     if approval not in ("always", "auto"):
         raise ConfigError(f'{where} approval must be "always" or "auto"')
+    if approval == "auto" and spec.owner_only:
+        raise ConfigError(f'{where} approval must be "always": {sender} is public and speaks as the owner, so the '
+                          "owner approves each one (the owner's decision of 2026-10-28)")
     limit = s.get("limit")
     if limit is not None and (not isinstance(limit, int) or isinstance(limit, bool) or limit < 0):
         raise ConfigError(f"{where} limit must be a whole number, 0 or more")

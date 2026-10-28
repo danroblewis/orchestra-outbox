@@ -140,6 +140,7 @@ patience = "48h"             # default 2 × per; at least 60s
 | `github.pr_comment` | `{repo = "o/r", number}` | the comment (a line starting `/approve` or `/lgtm` is refused) |
 | `github.label` | `{repo, number}` | one label name (`approved` and `lgtm` are refused) |
 | `github.pr_open` | `{repo, head, base}`, plus a `title` field | the PR body |
+| `github.issue_create` | `{repo = "o/r"}`, plus a `title` and optionally a `labels` field (names, comma-separated) | the issue's body |
 | `jira.comment` | `{issue = "OPS-12"}` | the comment |
 | `jira.transition` | `{issue}` | the transition's name or id |
 | `jira.create` | `{}` or `{project = "OPS"}` | `$content` in the payload |
@@ -235,6 +236,22 @@ timeout = "10m"                            # 1s..1h, default 120s
   kind's `approval`. If the owner rejects the first, the next attempt counts as the first again.
 - **Pushing and opening PRs** (`github.pr_open`, a script with `git.push` or `github.pr_open`) are
   ordinary kinds. Propose `always` for them.
+- **Opening an issue** (`github.issue_create`) is always the owner's to approve, one by one: the
+  check refuses `approval = "auto"` on such a kind. Your upstream issues (an installed plugin's bug,
+  with the local override's patch) go through a kind the owner adds, usually named
+  `upstream.issue`:
+
+  ```toml
+  [outbox.github]                       # the owner's GitHub connection (token from accounts, never here)
+
+  [outbox.kinds."upstream.issue"]
+  sender = "github.issue_create"        # approval is always the owner's; "auto" is refused
+  ```
+
+  Draft it with the target `{repo = "owner/name"}`, the fields `title` (and `labels`, if the owner
+  wants any) and the body as content. If the kind does not exist, the outbox refuses the draft with
+  `unknown kind 'upstream.issue'`: ask the owner whether to add it, and keep the issue's text for
+  them meanwhile.
 
 ## Credentials and accounts (outside every repository)
 

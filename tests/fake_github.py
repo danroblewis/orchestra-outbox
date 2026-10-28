@@ -8,6 +8,9 @@
 - ``POST /repos/{o}/{r}/pulls`` ``{title, head, base, body}``: 201 and the pull request; 422
   ``Validation Failed`` when one is open from that head already, or a field is missing;
 - ``GET /repos/{o}/{r}/pulls`` with ``head`` (``owner:branch``), ``state``, ``per_page``, ``page``;
+- ``POST /repos/{o}/{r}/issues`` ``{title, body, labels?}``: 201 and the issue (its number shared
+  with the pull requests'); 422 ``Validation Failed`` without a title;
+- ``GET /repos/{o}/{r}/issues`` with ``since``, ``state``, ``per_page``, ``page``;
 - ``POST /repos/{o}/{r}/pulls/{n}/reviews``: recorded in ``reviews`` (the outbox must never call it).
 
 It demands the bearer token (401 ``Bad credentials``), sends the rate-limit headers, and takes
@@ -28,6 +31,7 @@ OWNER = "danroblewis"
 API = "https://api.github.com"
 _ISSUE = re.compile(r"^/repos/([^/]+/[^/]+)/issues/(\d+)/(comments|labels)$")
 _PULLS = re.compile(r"^/repos/([^/]+/[^/]+)/pulls$")
+_ISSUES = re.compile(r"^/repos/([^/]+/[^/]+)/issues$")
 _REVIEWS = re.compile(r"^/repos/([^/]+/[^/]+)/pulls/(\d+)/reviews$")
 
 
@@ -53,6 +57,7 @@ class FakeGitHub(FakeServer):
         self._ids = itertools.count(5000)
         self.pulls: list[dict] = []
         self.reviews: list[dict] = []
+        self.issues: list[dict] = []
 
     def pr(self, n: int) -> int:
         self.prs.add(n)
@@ -88,8 +93,32 @@ class FakeGitHub(FakeServer):
         per, page = min(int(q.get("per_page", 30)), 100), int(q.get("page", 1))
         return 200, items[(page - 1) * per: page * per], headers
 
+    def _issues(self, method, q, body, headers):
+        if method == "POST":
+            b = body if isinstance(body, dict) else {}
+            if not str(b.get("title") or "").strip():
+                return 422, {"message": "Validation Failed", "errors": [{"resource": "Issue", "code": "missing_field",
+                             "field": "title"}], "status": "422"}, headers
+            n = max([*self.prs, *(i["number"] for i in self.issues), 0]) + 1
+            now = ts(time.time())
+            issue = {"url": f"{API}/repos/{self.repo}/issues/{n}", "id": next(self._ids), "node_id": f"I_{n}",
+                     "html_url": f"https://github.com/{self.repo}/issues/{n}", "number": n, "state": "open",
+                     "title": b["title"], "body": b.get("body"), "user": user(OWNER),
+                     "labels": [{"name": x, "color": "ededed", "default": False} for x in b.get("labels") or []],
+                     "locked": False, "comments": 0, "created_at": now, "updated_at": now, "closed_at": None,
+                     "author_association": "OWNER"}
+            self.issues.append(issue)
+            self.lose_if_asked()
+            return 201, issue, {**headers, "Location": issue["url"]}
+        since = q.get("since") or ""
+        items = [i for i in self.issues if i["updated_at"] >= since and q.get("state", "open") in ("all", i["state"])]
+        per, page = min(int(q.get("per_page", 30)), 100), int(q.get("page", 1))
+        return 200, items[(page - 1) * per: page * per], headers
+
     def route(self, method, path, q, body):
         headers = {"X-RateLimit-Limit": "5000", "X-RateLimit-Remaining": "4999", "X-RateLimit-Reset": "1793083020"}
+        if (m := _ISSUES.match(path)) and m.group(1) == self.repo:
+            return self._issues(method, q, body, headers)
         if (m := _PULLS.match(path)) and m.group(1) == self.repo:
             return self._pulls(method, q, body, headers)
         if (m := _REVIEWS.match(path)) and m.group(1) == self.repo and method == "POST":
