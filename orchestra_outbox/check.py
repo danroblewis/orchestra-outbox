@@ -1,13 +1,13 @@
-"""``orchestra-outbox check``: validate an ``[outbox]`` configuration before it is committed.
+"""``orchestra outbox check``: validate an ``[outbox]`` configuration before it is committed.
 
 For the Supervisor's tools (and anyone editing by hand)::
 
-    orchestra-outbox check                      # orchestra.toml of the repository here
-    orchestra-outbox check --repo ~/work        # ... of that repository
-    orchestra-outbox check --file proposed.toml # a whole orchestra.toml, not yet in place
-    orchestra-outbox check --file - --json      # read from stdin; answer in JSON
-    orchestra-outbox example                    # the owner's five starting kinds, to install and check
-    orchestra-outbox limits --json              # the rate limits in use, their backlog and usage
+    orchestra outbox check                      # orchestra.toml of the repository here
+    orchestra outbox check --repo ~/work        # ... of that repository
+    orchestra outbox check --file proposed.toml # a whole orchestra.toml, not yet in place
+    orchestra outbox check --file - --json      # read from stdin; answer in JSON
+    orchestra outbox example                    # the owner's five starting kinds, to install and check
+    orchestra outbox limits --json              # the rate limits in use, their backlog and usage
 
 Exit 0 when the configuration is valid, 1 when it is not, 2 when it cannot be read. The JSON is
 ``{"ok": bool, "errors": [...], "warnings": [...], "owner": id, "owner_from": where,
@@ -87,7 +87,7 @@ def limits(repo: Path) -> dict:
 
 
 def main(args: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="orchestra-outbox", description="The Outbox's tools.")
+    ap = argparse.ArgumentParser(prog="orchestra outbox", description="The Outbox's tools.")
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("check", help="validate [outbox] in an orchestra.toml")
     c.add_argument("--repo", type=Path, default=Path.cwd(), help="the repository (default: here)")

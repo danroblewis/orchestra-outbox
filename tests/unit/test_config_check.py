@@ -1,4 +1,4 @@
-"""The configuration contract and ``orchestra-outbox check``, which the Supervisor's tools call."""
+"""The configuration contract and ``orchestra outbox check``, which the Supervisor's tools call."""
 
 import json
 import subprocess
@@ -67,12 +67,12 @@ def test_every_problem_is_reported_at_once():
 
 def test_the_cli_checks_a_proposed_file_from_stdin_in_json(tmp_path):
     bad = '[outbox]\n[outbox.kinds."a"]\nsender = "nope"\n'
-    p = subprocess.run([sys.executable, "-m", "orchestra_outbox.check", "check", "--file", "-", "--json",
+    p = subprocess.run([sys.executable, "-m", "orchestra", "outbox", "check", "--file", "-", "--json",
                         "--repo", str(tmp_path)], input=bad, capture_output=True, text=True, check=False)
     assert p.returncode == 1
     out = json.loads(p.stdout)
     assert out["ok"] is False and "sender must be one of" in out["errors"][0]
-    p = subprocess.run([sys.executable, "-m", "orchestra_outbox.check", "check", "--file", "-", "--repo", str(tmp_path)],
+    p = subprocess.run([sys.executable, "-m", "orchestra", "outbox", "check", "--file", "-", "--repo", str(tmp_path)],
                        input=GOOD, capture_output=True, text=True, check=False)
     assert p.returncode == 0 and "ok: kinds review.request (slack.message, always)" in p.stdout
 

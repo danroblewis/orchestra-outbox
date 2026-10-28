@@ -5,8 +5,8 @@
 # directory, or the file ORCHESTRA_CONFIG_OVERLAY names), never into a shared orchestra.toml: the
 # channels, templates and projects are the owner's. The Supervisor does this; by hand:
 #
-#   orchestra-outbox example > /tmp/kinds.toml      # this file
-#   orchestra-outbox check --file /tmp/kinds.toml   # with your accounts.toml in place
+#   orchestra outbox example > /tmp/kinds.toml      # this file
+#   orchestra outbox check --file /tmp/kinds.toml   # with your accounts.toml in place
 #
 # Addresses and accounts come from ~/.config/orchestra/accounts.toml (SPEC §9): Jira's api must be
 # there (or in [outbox.jira] api). Tokens come from ~/.config/orchestra/tokens/.

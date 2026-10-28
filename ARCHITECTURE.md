@@ -50,7 +50,7 @@ Two processes write the record: the machine (drafts, policy, sends, publishing) 
 | `accounts.py` | the owner's shared accounts directory: tokens, API addresses, account ids; the owner in the identity map (no outbox imports) |
 | `actions.py` | the sensitive actions: PR approval refused, merge actions recognised |
 | `limits.py` | rate limits: `wait` before a send, `status`, `usage`, and `review` (the unresolvable notice) |
-| `check.py` | `orchestra-outbox check`, `example`, `limits`: for people and the Supervisor's tools |
+| `check.py` | `orchestra outbox check`, `example`, `limits`: for people and the Supervisor's tools |
 | `kinds.py` | the built-in senders' specs: target, content, default recipient, idempotent |
 | `templates.py` | `$name` templates for content and payloads (`string.Template`) |
 | `store.py` | the record: drafts, the audit log (also the queue of bus events), conditional moves, counts |

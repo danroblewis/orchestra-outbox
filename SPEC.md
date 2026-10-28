@@ -43,7 +43,7 @@ These are the owner's, from `docs/user-stories.md` ("What stays mine") and the o
    sender, a template and its approval. A workflow too complicated for configuration is a
    **script**, in the target repository or elsewhere, never plugin code.
 4. **The Supervisor configures it; it never writes plugin code.** The contract in §4 is exact so
-   that its tools can edit it, and `orchestra-outbox check` validates an edit before it is made.
+   that its tools can edit it, and `orchestra outbox check` validates an edit before it is made.
 5. **The bus carries no text.** Events carry ids, kinds, targets, codes and flags (Orchestra's rule
    3; the bridges' privacy rule). The text lives only in the Outbox's record.
 6. **Rule 9.** The Outbox page is a human path that changes the system, which Orchestra allows
@@ -264,18 +264,18 @@ timeout = "10m"
 ```
 
 The owner's five starting kinds (decided 2026-10-27, all `always`) are shipped as
-`orchestra_outbox/examples/owner-kinds.toml` (`orchestra-outbox example` prints it):
+`orchestra_outbox/examples/owner-kinds.toml` (`orchestra outbox example` prints it):
 `slack.thread_reply` (a reply in the Slack thread a request came from), `review.requested` (a
 "review requested" post naming its channel and, as a ping, its reviewers), `jira.comment`,
 `jira.transition`, and `jira.create` from the owner's template, whose fields are the kind's
 `payload`. The Supervisor installs it into the owner's overlay and checks it there.
 
-### 4.5 `orchestra-outbox check`
+### 4.5 `orchestra outbox check`
 
 ```
-orchestra-outbox check [--repo PATH] [--file FILE | --file -] [--json]
-orchestra-outbox example
-orchestra-outbox limits [--repo PATH] [--json]
+orchestra outbox check [--repo PATH] [--file FILE | --file -] [--json]
+orchestra outbox example
+orchestra outbox limits [--repo PATH] [--json]
 ```
 
 Exit 0 valid, 1 not, 2 unreadable. `--json` answers `{"ok", "errors": [...], "warnings": [...],
@@ -352,7 +352,7 @@ Then every drafting machine with drafts in that backlog publishes `outbox.rate_l
 sent or rejected. The drafts keep waiting meanwhile: the owner may reject some, and the Supervisor
 may change the limit, the kind or the drafter. Nothing is sent over a limit to catch up.
 
-The same picture, read from the record: `GET /limits` on the machine's API, `orchestra-outbox
+The same picture, read from the record: `GET /limits` on the machine's API, `orchestra outbox
 limits [--json]`, the page's "Rate limits" (one card per limit in use: the limit, sends in the
 window, the backlog by drafter, why it is unresolvable, and a graph of sends in the window, the
 limit and the drafts waiting over the last two windows), and the series of §8, which Orchestra
@@ -533,12 +533,12 @@ The contract a Supervisor, or a program in its place, acts on. Metadata only.
 It is published once per episode per drafter; `outbox.rate_limit.resolved` (same source and
 subject, `causationid` the notice) closes it when that drafter's backlog there is empty. What can
 be done is the reader's: reject drafts (the owner, on the page), change the kind's `limit`, `per`,
-`patience` or `approval` (a configuration change, checked by `orchestra-outbox check`), or make the
+`patience` or `approval` (a configuration change, checked by `orchestra outbox check`), or make the
 drafter draft less.
 
 ### 7.2 What the Supervisor needs (in `orchestra-agents`, not built here)
 
-1. **A tool to read the limits**: `orchestra-outbox limits --repo <repo> --json` (or `GET
+1. **A tool to read the limits**: `orchestra outbox limits --repo <repo> --json` (or `GET
    <outbox>/limits` with the project's token): each limit in use with `limit`, `per`, `patience`,
    `sent_in_window`, `arrivals_in_window`, `backlog`, `backlog_by_drafter`, `oldest_wait`,
    `unresolvable`, `why`, and `usage` (`[[t, sends in the window ending at t, waiting at t], ...]`

@@ -12,11 +12,11 @@ dependencies = ["orchestra @ git+https://github.com/danroblewis/orchestra@main",
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "httpx>=0.27", "ruff>=0.6"]
 
-[project.scripts]
-orchestra-outbox = "orchestra_outbox.check:main"
-
 [project.entry-points."orchestra.plugins"]
 outbox = "orchestra_outbox.plugin:plugin"
+
+[project.entry-points."orchestra.commands"]
+outbox = "orchestra_outbox.check:main"
 
 [tool.hatch.metadata]
 allow-direct-references = true   # Orchestra comes from GitHub (see README, "Developing against a local Orchestra")

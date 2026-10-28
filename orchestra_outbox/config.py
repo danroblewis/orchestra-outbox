@@ -1,5 +1,5 @@
 """The outbox's settings: ``[outbox]`` in the project's orchestra.toml, a section Orchestra ignores.
-The contract is in SPEC.md §4 and README.md; the Supervisor edits it, and ``orchestra-outbox check``
+The contract is in SPEC.md §4 and README.md; the Supervisor edits it, and ``orchestra outbox check``
 validates it first (``check.py``).
 
 ::

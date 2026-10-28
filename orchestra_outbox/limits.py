@@ -23,7 +23,7 @@ Then each drafting machine with drafts in that backlog publishes ``outbox.rate_l
 notice is the drafter's, not the outbox's: the outbox is infrastructure and never a machine of its
 own here (Orchestra's decision D19), and the drafter is the machine whose drafts are held and whose
 drafting would have to change. ``status`` and ``usage`` give the same picture to the page, the
-``/limits`` API, ``orchestra-outbox limits`` and ``/metrics``."""
+``/limits`` API, ``orchestra outbox limits`` and ``/metrics``."""
 
 from __future__ import annotations
 

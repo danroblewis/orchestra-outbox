@@ -143,7 +143,7 @@ class Machine:
 
 
 def limits_view(store: Store, s: Settings, now: float) -> dict:
-    """The rate limits as ``/limits``, the page and ``orchestra-outbox limits`` show them: each one in
+    """The rate limits as ``/limits``, the page and ``orchestra outbox limits`` show them: each one in
     use, its status, and its usage over time (``limits.usage``) for a kind's limit."""
     out = []
     for lim in limits.status(store, s, now):

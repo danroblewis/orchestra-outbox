@@ -27,9 +27,15 @@ uv run python -m pytest -q
 uv run ruff check
 ```
 
-To use it with a project, run `orchestra run` and `orchestra web` from this environment (or install
-it into the environment that runs Orchestra; Orchestra's README, "Install", does both from GitHub
-with no clone).
+To use it with a project, run `orchestra run` and `orchestra web` from this environment, or install
+Orchestra with it as a tool, from GitHub with no clone:
+
+```bash
+uv tool install 'orchestra[sd] @ git+https://github.com/danroblewis/orchestra@main' --with 'orchestra-outbox @ git+https://github.com/danroblewis/orchestra-outbox'
+```
+
+Its command line comes with it as `orchestra outbox` (`orchestra outbox --help`); there is no
+executable of its own.
 
 Only someone logged in to Orchestra's web UI approves. The Outbox page and its API are behind
 `orchestra web`'s login (the project's web token: open the link `orchestra web` prints, or paste
@@ -84,7 +90,7 @@ template = "RR: $link cc: $reviewers"
 
 Your own kinds, channels and templates belong in your private overlay (`orchestra.local.toml` in
 the project's state directory), not a shared `orchestra.toml`. Five starting kinds, all approved by
-you each time, come with the outbox: `orchestra-outbox example` prints them (a Slack thread reply,
+you each time, come with the outbox: `orchestra outbox example` prints them (a Slack thread reply,
 "review requested", a Jira comment, a Jira transition, a Jira issue from your template).
 
 **Your accounts and tokens** live in one place outside every repository, shared with the bridges
@@ -121,8 +127,8 @@ Phase 1's `~/.config/orchestra-outbox/<system>-token` is still read; move it.
 Check a configuration before committing it (the Supervisor's tools call the same):
 
 ```bash
-uv run orchestra-outbox check --repo ~/work            # exit 1 and the reasons when it is wrong
-uv run orchestra-outbox check --file proposed.toml --json
+uv run orchestra outbox check --repo ~/work            # exit 1 and the reasons when it is wrong
+uv run orchestra outbox check --file proposed.toml --json
 ```
 
 ### Kinds
@@ -148,7 +154,7 @@ when the window allows, and the same for an API that says to slow down. If waiti
 the backlog (drafts arrive faster than the limit lets out, or one waits past its `patience`), the
 machines that drafted them say so on the bus (`outbox.rate_limit.unresolvable`), the Outbox page
 shows the limit, the backlog and a graph of its use, and you tell the Supervisor what to do.
-`orchestra-outbox limits` prints the same.
+`orchestra outbox limits` prints the same.
 
 **What no kind does.** Approve a pull request: refused at `check`, at drafting and at sending. A
 merge action (a script with `action = "github.pr_merge"`, or a label in `merge_labels`) needs your
