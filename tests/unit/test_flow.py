@@ -26,7 +26,8 @@ def test_a_machine_drafts_the_owner_approves_and_slack_gets_exactly_that_message
     assert evs[0]["causationid"] == "ticket-42-ready" and evs[0]["correlationid"] == "ticket-42"
     assert evs[1]["causationid"] == evs[0]["id"] and evs[2]["causationid"] == evs[1]["id"]
     assert evs[2]["data"]["remote"]["channel"] == REVIEW and evs[2]["data"]["to"] == "worker/1"
-    assert evs[1]["data"] == {"draft": d["id"], "kind": "review.request", "to": "worker/1", "by": "owner", "edited": False}
+    assert evs[1]["data"] == {"draft": d["id"], "kind": "review.request", "to": "worker/1", "by": "owner",
+                             "approver": "person.owner", "edited": False}
 
 
 def test_an_edited_approval_sends_the_edit(project, machine, drafter, web, slack):

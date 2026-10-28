@@ -38,7 +38,7 @@ def test_a_good_configuration_passes_and_defaults_to_always():
     ('[outbox]\n[outbox.kinds."x.y"]\nsender = "slack.message"\n', "[outbox.slack] is not configured"),
     ('[outbox]\n[outbox.slack]\ntoken = "xoxp-1"\n', "token is refused"),
     ('[outbox]\n[outbox.slack]\napi = "https://evil.example/api"\n', "must be on slack.com"),
-    ('[outbox]\n[outbox.jira]\n', "api must be a URL (Jira has no default)"),
+    ('[outbox]\n[outbox.jira]\n', "api must be a URL (Jira has no default"),
     ('[outbox]\n[outbox.github]\napi = "http://github.example"\n', "must be https"),
     ('[outbox]\n[outbox.slack]\n[outbox.kinds."a"]\nsender = "slack.message"\napproval = "sometimes"\n', 'approval must be'),
     ('[outbox]\n[outbox.slack]\n[outbox.kinds."a"]\nsender = "slack.message"\ntemplate = "hi $"\n', "malformed placeholder"),
@@ -79,7 +79,7 @@ def test_the_cli_checks_a_proposed_file_from_stdin_in_json(tmp_path):
 
 def test_check_warns_of_a_missing_script_but_passes(tmp_path, capsys):
     (tmp_path / "orchestra.toml").write_text('[outbox]\n[outbox.kinds."port"]\nsender = "script"\n'
-                                             'command = "scripts/port.sh --to release"\n')
+                                             'command = "scripts/port.sh --to release"\naction = "other"\n')
     assert main(["check", "--repo", str(tmp_path), "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["ok"] and "is not a file" in out["warnings"][0]
@@ -115,4 +115,5 @@ def test_the_specs_example_configuration_passes_the_check():
     block = spec.split("### 4.4 Examples", 1)[1].split("```toml", 1)[1].split("```", 1)[0]
     out = check(tomllib.loads(block), Path("/nonexistent"))
     assert out["ok"], out["errors"]
-    assert out["kinds"]["review.ping"] == {"sender": "slack.reply", "approval": "auto", "limit": 1, "per": 86400.0}
+    assert out["kinds"]["review.ping"] == {"sender": "slack.reply", "approval": "auto", "limit": 1, "per": 86400.0,
+                                           "ping": True, "action": "slack.post"}

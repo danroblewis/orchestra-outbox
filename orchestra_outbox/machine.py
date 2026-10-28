@@ -1,12 +1,13 @@
 """The machine ``outbox``: ``python -m orchestra_outbox run``, which ``orchestra run`` keeps running as
 ``outbox.sender`` in a project with an ``[outbox]`` section.
 
-It announces itself, serves the drafting API and ``/metrics`` (``server.py``), and every half
-second publishes the audit rows not yet on the bus (``audit.py``) and tries the drafts due to be
-sent (``dispatch.py``). It re-reads ``[outbox]`` when orchestra.toml changes, so a kind the
-Supervisor adds is draftable within a second; a configuration that fails the check is logged and
-the last good one stands. It holds every write token, and only it does: the web server never
-sends."""
+It announces itself, serves the drafting API, ``/limits`` and ``/metrics`` (``server.py``), and every
+half second publishes the audit rows not yet on the bus (``audit.py``) and tries the drafts due to
+be sent (``dispatch.py``); every few seconds it reviews the rate limits and has the drafters behind
+an unresolvable one say so (``limits.py``). It re-reads ``[outbox]`` when orchestra.toml, the
+private overlay or the shared accounts file changes, so a kind the Supervisor adds is draftable
+within a second; a configuration that fails the check is logged and the last good one stands. It
+holds every write token, and only it does: the web server never sends."""
 
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ from orchestra import endpoint
 from orchestra.config import ConfigError, load_project
 from orchestra.events import Events
 
-from . import MACHINE, PACKAGE, audit, measures
+from . import MACHINE, PACKAGE, accounts, audit, limits, measures
 from .config import Settings, settings
 from .dispatch import Dispatcher
 from .senders import build
@@ -33,6 +34,7 @@ from .store import Store
 
 log = logging.getLogger("orchestra_outbox")
 TICK_S = 0.5
+REVIEW_S = 5.0
 
 
 def endpoint_file(project):
@@ -43,29 +45,32 @@ class Machine:
     def __init__(self, project, *, clock: Callable[[], float] = time.time, events: Events | None = None):
         self.project, self.clock = project, clock
         self.store = Store.for_project(project, clock)
-        self.settings: Settings = settings(project.config.raw)
+        self.settings: Settings = settings(project.config.raw, project.repo_root)
         self.events = events or Events.for_project(project, source=MACHINE)
         self.senders = build(self.settings, project.repo_root)
         self.outbox = Outbox(self.store, self.settings, clock)
         self.dispatcher = Dispatcher(self.store, self.settings, self.senders, clock)
         self.server: Server | None = None
-        self._toml_mtime = self._mtime()
+        self._stamp = self._config_stamp()
+        self._reviewed = 0.0
 
-    def _mtime(self) -> float | None:
+    def _config_stamp(self) -> tuple:
         try:
-            return (self.project.repo_root / "orchestra.toml").stat().st_mtime
+            shared = (accounts.directory() / accounts.FILE).stat().st_mtime_ns
         except OSError:
-            return None
+            shared = None
+        return (self.project.config_stamp(), shared)
 
     def reload(self) -> bool:
-        """Re-read ``[outbox]`` if orchestra.toml changed; True when new settings took effect."""
-        m = self._mtime()
-        if m == self._toml_mtime:
+        """Re-read ``[outbox]`` if orchestra.toml, the overlay or accounts.toml changed; True when new
+        settings took effect."""
+        stamp = self._config_stamp()
+        if stamp == self._stamp:
             return False
-        self._toml_mtime = m
+        self._stamp = stamp
         try:
             self.project.reload_config()
-            new = settings(self.project.config.raw)
+            new = settings(self.project.config.raw, self.project.repo_root)
         except (ConfigError, OSError, ValueError) as e:
             log.warning("outbox: orchestra.toml changed, but [outbox] does not pass the check; the last good "
                         "configuration stands: %s", e)
@@ -84,7 +89,18 @@ class Machine:
             **({"log": log_file} if log_file else {})})
 
     def metrics(self) -> str:
-        return measures.text(self.store, sorted(self.settings.kinds), self.clock())
+        return measures.text(self.store, self.settings, self.clock())
+
+    def limits(self) -> dict:
+        now = self.clock()
+        return limits_view(self.store, self.settings, now)
+
+    def review(self, force: bool = False) -> int:
+        now = self.clock()
+        if not force and now - self._reviewed < REVIEW_S:
+            return 0
+        self._reviewed = now
+        return limits.review(self.store, self.settings, now)
 
     def flush(self) -> int:
         try:
@@ -97,6 +113,7 @@ class Machine:
         self.reload()
         self.flush()
         self.dispatcher.step()
+        self.review()
         self.flush()
 
     def serve(self) -> Server:
@@ -123,6 +140,21 @@ class Machine:
             except FileNotFoundError:
                 pass
             self.flush()
+
+
+def limits_view(store: Store, s: Settings, now: float) -> dict:
+    """The rate limits as ``/limits``, the page and ``orchestra-outbox limits`` show them: each one in
+    use, its status, and its usage over time (``limits.usage``) for a kind's limit."""
+    out = []
+    for lim in limits.status(store, s, now):
+        v = lim.view()
+        k = s.kinds.get(lim.kind) if lim.kind else None
+        if k is not None:
+            v["usage"] = limits.usage(store, k, lim.recipient, now)
+        out.append(v)
+    return {"now": now, "limits": out,
+            "notices": [{"resource": r, "drafter": d, "since": t} for (r, d), t in sorted(store.notices().items())],
+            "series": limits.SERIES}
 
 
 def main(argv: list[str]) -> int:

@@ -4,7 +4,11 @@
   owner; 404 for an unknown pull request; 422 ``Validation Failed`` for an empty body;
 - ``GET /repos/{o}/{r}/issues/{n}/comments`` with ``since``, ``per_page`` and ``page``, oldest first;
 - ``POST /repos/{o}/{r}/issues/{n}/labels`` ``{"labels": [...]}``: 200 and the item's labels
-  (adding one it has changes nothing).
+  (adding one it has changes nothing);
+- ``POST /repos/{o}/{r}/pulls`` ``{title, head, base, body}``: 201 and the pull request; 422
+  ``Validation Failed`` when one is open from that head already, or a field is missing;
+- ``GET /repos/{o}/{r}/pulls`` with ``head`` (``owner:branch``), ``state``, ``per_page``, ``page``;
+- ``POST /repos/{o}/{r}/pulls/{n}/reviews``: recorded in ``reviews`` (the outbox must never call it).
 
 It demands the bearer token (401 ``Bad credentials``), sends the rate-limit headers, and takes
 ``fail_next``, ``lose_next`` and ``asleep`` (``fake_http.py``). The shapes follow
@@ -23,6 +27,8 @@ from fake_http import FakeServer
 OWNER = "danroblewis"
 API = "https://api.github.com"
 _ISSUE = re.compile(r"^/repos/([^/]+/[^/]+)/issues/(\d+)/(comments|labels)$")
+_PULLS = re.compile(r"^/repos/([^/]+/[^/]+)/pulls$")
+_REVIEWS = re.compile(r"^/repos/([^/]+/[^/]+)/pulls/(\d+)/reviews$")
 
 
 def ts(t: float) -> str:
@@ -45,6 +51,8 @@ class FakeGitHub(FakeServer):
         self.comments: list[dict] = []
         self.labels: dict[int, list[str]] = {}
         self._ids = itertools.count(5000)
+        self.pulls: list[dict] = []
+        self.reviews: list[dict] = []
 
     def pr(self, n: int) -> int:
         self.prs.add(n)
@@ -54,12 +62,43 @@ class FakeGitHub(FakeServer):
     def comments_on(self, n: int) -> list[dict]:
         return [c for c in self.comments if c["issue_url"].endswith(f"/issues/{n}")]
 
+    def _pulls(self, method, q, body, headers):
+        if method == "POST":
+            b = body if isinstance(body, dict) else {}
+            missing = [k for k in ("title", "head", "base") if not b.get(k)]
+            head = f"{self.repo.split('/')[0]}:{b.get('head')}" if ":" not in str(b.get("head")) else b.get("head")
+            if missing or any(p["head"]["label"] == head and p["state"] == "open" for p in self.pulls):
+                return 422, {"message": "Validation Failed", "errors": [{"resource": "PullRequest", "code": "custom",
+                             "message": f"A pull request already exists for {head}."}], "status": "422"}, headers
+            n = max([*self.prs, 0]) + 1
+            self.pr(n)
+            now = ts(time.time())
+            pull = {"url": f"{API}/repos/{self.repo}/pulls/{n}", "id": next(self._ids), "node_id": f"PR_{n}",
+                    "html_url": f"https://github.com/{self.repo}/pull/{n}", "number": n, "state": "open",
+                    "locked": False, "title": b["title"], "user": user(OWNER), "body": b.get("body"),
+                    "created_at": now, "updated_at": now, "draft": False,
+                    "head": {"label": head, "ref": head.split(":", 1)[1], "sha": "0" * 40},
+                    "base": {"label": f"{self.repo.split('/')[0]}:{b['base']}", "ref": b["base"], "sha": "1" * 40},
+                    "merged": False, "mergeable": None}
+            self.pulls.append(pull)
+            self.lose_if_asked()
+            return 201, pull, {**headers, "Location": pull["url"]}
+        items = [p for p in self.pulls if (not q.get("head") or p["head"]["label"] == q["head"])
+                 and q.get("state", "open") in ("all", p["state"])]
+        per, page = min(int(q.get("per_page", 30)), 100), int(q.get("page", 1))
+        return 200, items[(page - 1) * per: page * per], headers
+
     def route(self, method, path, q, body):
+        headers = {"X-RateLimit-Limit": "5000", "X-RateLimit-Remaining": "4999", "X-RateLimit-Reset": "1793083020"}
+        if (m := _PULLS.match(path)) and m.group(1) == self.repo:
+            return self._pulls(method, q, body, headers)
+        if (m := _REVIEWS.match(path)) and m.group(1) == self.repo and method == "POST":
+            self.reviews.append(body)
+            return 200, {"id": next(self._ids), "state": str((body or {}).get("event", "PENDING"))}, headers
         m = _ISSUE.match(path)
         if not m or m.group(1) != self.repo or int(m.group(2)) not in self.prs:
             return 404, {"message": "Not Found", "documentation_url": "https://docs.github.com/rest", "status": "404"}, {}
         n, what = int(m.group(2)), m.group(3)
-        headers = {"X-RateLimit-Limit": "5000", "X-RateLimit-Remaining": "4999", "X-RateLimit-Reset": "1793083020"}
         if what == "comments" and method == "POST":
             text = (body or {}).get("body") if isinstance(body, dict) else None
             if not text:

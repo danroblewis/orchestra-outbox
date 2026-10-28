@@ -44,7 +44,14 @@ CREATE TABLE IF NOT EXISTS audit (
   event_id TEXT NOT NULL UNIQUE, published INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS audit_unpublished ON audit (published, seq);
+CREATE TABLE IF NOT EXISTS merges (
+  pr TEXT PRIMARY KEY, draft TEXT NOT NULL, at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS notices (
+  resource TEXT NOT NULL, drafter TEXT NOT NULL, opened_at REAL NOT NULL, PRIMARY KEY (resource, drafter)
+);
 """
+_ADDED = {"approver": "TEXT", "held_since": "REAL"}       # columns added after phase 1: added to an older record
 
 
 @dataclass
@@ -63,7 +70,7 @@ class Draft:
     state: str = DRAFTED
     edited: bool = False
     approved_by: str | None = None    # "owner" or "policy"
-    held: str | None = None           # why an auto kind's draft waits for the owner ("rate_limit")
+    held: str | None = None           # why it waits: "rate_limit", "api_rate_limit" (sending later), "first_merge" (the owner)
     reason: str | None = None         # a rejection's reason code
     note: str | None = None           # the owner's words to the drafter (never on the bus)
     created_at: float = 0.0
@@ -75,6 +82,8 @@ class Draft:
     sending_since: float | None = None
     error: str | None = None          # the last send error's code, never a body
     output: str | None = None         # a script sender's output, its last 4 KB (here only, never on the bus)
+    approver: str | None = None       # the owner's person id, when the owner approved or rejected it
+    held_since: float | None = None   # when it first waited for a rate limit or a first merge
 
     def view(self) -> dict:
         """The draft as the page and the drafter's API show it, content included."""
@@ -109,6 +118,10 @@ class Store:
         c = self._conn()
         c.execute("PRAGMA journal_mode=WAL")
         c.executescript(_SCHEMA)
+        have = {r[1] for r in c.execute("PRAGMA table_info(drafts)")}
+        for col, typ in _ADDED.items():
+            if col not in have:
+                c.execute(f"ALTER TABLE drafts ADD COLUMN {col} {typ}")
 
     @classmethod
     def for_project(cls, project, clock: Callable[[], float] = time.time) -> Store:
@@ -182,11 +195,43 @@ class Store:
             (APPROVED, SENDING, now)).fetchall()
         return [_row(r) for r in rows]
 
-    def sends_to(self, c: sqlite3.Connection, kind: str, since: float) -> list[Draft]:
-        """Drafts of ``kind`` approved since ``since`` and not rejected or failed: those a limit counts."""
-        rows = c.execute("SELECT * FROM drafts WHERE kind = ? AND decided_at >= ? AND state IN (?, ?, ?)",
-                         (kind, since, APPROVED, SENDING, SENT)).fetchall()
+    def sent_since(self, c: sqlite3.Connection, kind: str, since: float) -> list[Draft]:
+        """Drafts of ``kind`` whose sending began since ``since`` and did not fail: what a limit counts."""
+        rows = c.execute("SELECT * FROM drafts WHERE kind = ? AND sending_since >= ? AND state IN (?, ?)",
+                         (kind, since, SENDING, SENT)).fetchall()
         return [_row(r) for r in rows]
+
+    def of_kind(self, kind: str, since: float) -> list[Draft]:
+        """Drafts of ``kind`` that were waiting or sent since ``since``, or are waiting now: what a
+        limit's status and its usage over time are read from."""
+        rows = self._conn().execute(
+            "SELECT * FROM drafts WHERE kind = ? AND (state IN (?, ?) OR COALESCE(sending_since, held_since, decided_at, "
+            "created_at) >= ? OR held_since >= ?)", (kind, APPROVED, SENDING, since, since)).fetchall()
+        return [_row(r) for r in rows]
+
+    def held(self, reason: str) -> list[Draft]:
+        rows = self._conn().execute("SELECT * FROM drafts WHERE held = ? AND state IN (?, ?, ?)",
+                                    (reason, DRAFTED, APPROVED, SENDING)).fetchall()
+        return [_row(r) for r in rows]
+
+    # merge actions: the first per pull request is the owner's
+
+    def merged_before(self, c: sqlite3.Connection, pr: str) -> bool:
+        return c.execute("SELECT 1 FROM merges WHERE pr = ?", (pr,)).fetchone() is not None
+
+    def first_merge(self, c: sqlite3.Connection, pr: str, draft: str, at: float) -> None:
+        c.execute("INSERT OR IGNORE INTO merges (pr, draft, at) VALUES (?, ?, ?)", (pr, draft, at))
+
+    # the rate-limit notices open now, per resource and drafter
+
+    def notices(self) -> dict[tuple[str, str], float]:
+        return {(r, d): t for r, d, t in self._conn().execute("SELECT resource, drafter, opened_at FROM notices")}
+
+    def open_notice(self, c: sqlite3.Connection, resource: str, drafter: str, at: float) -> None:
+        c.execute("INSERT OR REPLACE INTO notices (resource, drafter, opened_at) VALUES (?, ?, ?)", (resource, drafter, at))
+
+    def close_notice(self, c: sqlite3.Connection, resource: str, drafter: str) -> None:
+        c.execute("DELETE FROM notices WHERE resource = ? AND drafter = ?", (resource, drafter))
 
     def counts(self) -> dict:
         """What /metrics serves, from the record: so a restart neither resets nor double-counts."""
@@ -227,7 +272,8 @@ class Store:
     def audit(self, c: sqlite3.Connection, draft: str, type: str, source: str, data: dict, *,
               causationid: str | None = None, correlationid: str | None = None, at: float | None = None) -> str:
         """Record one change, metadata only, to be published on the bus as ``type`` from ``source``;
-        returns its event id."""
+        returns its event id. ``draft`` is the event's subject: a draft's id, or a rate limit's
+        resource (``limits.py``)."""
         n = c.execute("SELECT COUNT(*) FROM audit WHERE draft = ?", (draft,)).fetchone()[0]
         event_id = f"outbox:{draft}:{n + 1}"
         c.execute("INSERT INTO audit (draft, at, type, source, data, causationid, correlationid, event_id) "
@@ -236,9 +282,12 @@ class Store:
                    correlationid, event_id))
         return event_id
 
-    def last_event(self, c: sqlite3.Connection, draft: str, type: str | None = None) -> str | None:
-        q = "SELECT event_id FROM audit WHERE draft = ?" + (" AND type = ?" if type else "") + " ORDER BY seq DESC"
-        r = c.execute(q, (draft, type) if type else (draft,)).fetchone()
+    def last_event(self, c: sqlite3.Connection, draft: str, type: str | None = None,
+                   source: str | None = None) -> str | None:
+        q = ("SELECT event_id FROM audit WHERE draft = ?" + (" AND type = ?" if type else "")
+             + (" AND source = ?" if source else "") + " ORDER BY seq DESC")
+        args = [draft, *([type] if type else []), *([source] if source else [])]
+        r = c.execute(q, args).fetchone()
         return r[0] if r else None
 
     def unpublished(self, limit: int = 200) -> list[dict]:

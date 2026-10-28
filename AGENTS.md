@@ -9,7 +9,8 @@ broken without updating the spec and saying so in the commit. Orchestra's own ru
 1. **Nothing is sent as the owner without the owner's approval, unless the configuration says
    so.** Every kind's approval is `"always"` unless its entry in `[outbox.kinds]` says `"auto"`.
    Never add a default, a heuristic or a code path that loosens it: autonomy is the owner's
-   configuration, set by asking the Supervisor. An `auto` kind never sends over its limit.
+   configuration, set by asking the Supervisor. The first merge action on each pull request is the
+   owner's whatever the kind says, and no kind ever approves a pull request (SPEC §6.6).
 2. **This plugin is the human path that changes the system** (Orchestra's rule 9). The Outbox
    page and its API (`web.py`) are the owner's way to approve, edit and reject drafts, behind
    Orchestra's web login (never add a route or a server that is reached without it). That is the
@@ -29,11 +30,16 @@ broken without updating the spec and saying so in the commit. Orchestra's own ru
    or a script. A new built-in sender is for a system many owners use (as the bridges' test is),
    and it comes with a fake that speaks the real API, a `find`, and canary coverage.
 7. **Tokens stay in memory, in the machine.** From the environment or an owner-only file outside
-   the repository, read when first needed, sent only to the configured API's origin, never
-   written, logged or published. `config.py` refuses a `token` key.
+   the repository (the shared `~/.config/orchestra/`, SPEC §9; `accounts.py` stays free of the
+   outbox's imports so a common library can take it), read when first needed, sent only to the
+   configured API's origin, never written, logged or published. `config.py` refuses a `token` key.
 8. **State lives in `~/.orchestrator/<key>/outbox/`** (the record, owner-only), except the events
    and metrics, which go through `orchestra.events` and `/metrics`. Nothing here imports
    Orchestra's web app, host or model outside tests.
+9. **A limit paces; it never drops and never asks.** No draft is sent over a limit, and none over
+   it is dropped or sent back to the owner: it waits for the window. When waiting will not clear a
+   backlog, the drafters behind it publish `outbox.rate_limit.unresolvable` (SPEC §5.3, §7.1), a
+   contract the Supervisor and programs read: change its fields only with SPEC §7.1.
 
 ## Conventions
 

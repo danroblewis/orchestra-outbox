@@ -80,7 +80,7 @@ def script_project(make_project, tmp_path, monkeypatch, timeout="30s"):
     out.mkdir()
     monkeypatch.setenv("OUT_DIR", str(out))
     p = make_project(f'\n[outbox.kinds."port.request"]\nsender = "script"\ncommand = ["scripts/port.sh", "--release"]\n'
-                     f'target = ["repo", "branch"]\ntimeout = "{timeout}"\n')
+                     f'action = "other"\ntarget = ["repo", "branch"]\ntimeout = "{timeout}"\n')
     (p.repo_root / "scripts").mkdir()
     s = p.repo_root / "scripts" / "port.sh"
     s.write_text(SCRIPT)

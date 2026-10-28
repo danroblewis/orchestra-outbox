@@ -13,15 +13,25 @@ canary tests hold this.
 type                       source                  data
 =========================  ======================  ===========================================================
 ``outbox.draft.created``   the drafter             draft, kind, target, recipients, approval, chars
-``outbox.draft.held``      ``outbox``              draft, kind, to (the drafter), reason (``rate_limit``)
-``outbox.draft.approved``  the owner, or           draft, kind, to, by (``owner``/``policy``), edited
+``outbox.draft.held``      ``outbox``              draft, kind, to (the drafter), reason (``rate_limit``,
+                                                   ``api_rate_limit``: sent later; ``first_merge``: the owner's),
+                                                   until (rate limits), pr (first_merge)
+``outbox.draft.approved``  the owner, or           draft, kind, to, by (``owner``/``policy``), edited, approver
+                                                   (the owner's person id, when by the owner)
                            ``outbox`` (by policy)
 ``outbox.draft.rejected``  the owner               draft, kind, to, reason (a code), note (whether there is one)
 ``outbox.sent``            ``outbox``              draft, kind, to, remote (where it landed), attempts
 ``outbox.send_failed``     ``outbox``              draft, kind, to, error (a code), attempts
+``outbox.rate_limit.``     the drafter whose       resource, scope, system, api, kind, recipient, limit, per,
+``unresolvable``           drafts are held         patience, sent_in_window, arrivals_in_window, backlog,
+                                                   backlog_total, oldest_wait, why, drafts, series, read
+``outbox.rate_limit.``     the same drafter        resource, scope, system or kind and recipient, backlog (0),
+``resolved``                                       lasted
 =========================  ======================  ===========================================================
 
-Every event's ``subject`` is the draft's id. ``outbox.draft.created`` carries the drafter's
+A rate-limit event's ``subject`` is the resource (``limits.py``), not a draft.
+
+A draft's event's ``subject`` is the draft's id. ``outbox.draft.created`` carries the drafter's
 ``causationid`` (the ticket's or event's that caused it) and ``correlationid``; each later event's
 ``causationid`` is the event it follows, and ``correlationid`` is kept. ``to`` addresses an event
 to the drafting machine: the drafter listens for ``outbox.draft.rejected`` (and the others) whose
@@ -33,7 +43,8 @@ from datetime import UTC, datetime
 
 CREATED, HELD, APPROVED, REJECTED = "outbox.draft.created", "outbox.draft.held", "outbox.draft.approved", "outbox.draft.rejected"
 SENT, SEND_FAILED = "outbox.sent", "outbox.send_failed"
-TYPES = (CREATED, HELD, APPROVED, REJECTED, SENT, SEND_FAILED)
+UNRESOLVABLE, RESOLVED = "outbox.rate_limit.unresolvable", "outbox.rate_limit.resolved"
+TYPES = (CREATED, HELD, APPROVED, REJECTED, SENT, SEND_FAILED, UNRESOLVABLE, RESOLVED)
 
 REASONS = ("content", "target", "not_needed", "duplicate", "timing", "other")   # why the owner rejected
 

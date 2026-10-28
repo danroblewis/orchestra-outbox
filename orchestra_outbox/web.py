@@ -4,8 +4,9 @@ and approves (perhaps edited) or rejects a draft. Nothing here sends and nothing
 token: the decision is written to the outbox's record, and the outbox machine publishes it and
 sends (``machine.py``).
 
-- ``GET /state``: the kinds and how each is approved, the drafts waiting, the latest decided, the
-  audit log, and whether the outbox machine runs;
+- ``GET /state``: the kinds and how each is approved (with the unedited approvals in a row, and a
+  suggestion when a run is long), the drafts waiting, the latest decided, the rate limits in use
+  with their usage over time, the audit log, and whether the outbox machine runs;
 - ``POST /drafts/<id>/approve``, ``{"content": "..."}`` optional: approve, with the edit if given;
 - ``POST /drafts/<id>/reject``, ``{"reason": <code>, "note": "..."}``: reject; the reason code goes
   on the bus to the drafter, the note only to the record, where the drafter reads it.
@@ -28,9 +29,11 @@ from orchestra.runtime import alive
 from . import audit as A
 from .config import Settings, settings
 from .kinds import DraftError
-from .machine import endpoint_file
+from .machine import endpoint_file, limits_view
 from .service import Conflict, NotFound, Outbox
 from .store import DRAFTED, Store
+
+SUGGEST_AFTER = 10       # unedited approvals in a row after which the page says "could be automatic"
 
 
 def router(project) -> APIRouter:
@@ -45,7 +48,7 @@ def router(project) -> APIRouter:
     def current() -> tuple[Settings | None, str | None]:
         try:
             project.reload_config()
-            return settings(project.config.raw), None
+            return settings(project.config.raw, project.repo_root), None
         except (ConfigError, OSError, ValueError) as e:
             return None, str(e)
 
@@ -78,11 +81,15 @@ def router(project) -> APIRouter:
         st = store()
         streaks = st.streaks()
         kinds = [{"name": k.name, "sender": k.sender, "approval": k.approval, "limit": k.limit, "per": k.per,
-                  "template": k.template is not None, "unedited_streak": streaks.get(k.name, 0)}
+                  "ping": k.ping, "action": k.action, "template": k.template is not None,
+                  "unedited_streak": streaks.get(k.name, 0),
+                  "suggest": k.approval == "always" and streaks.get(k.name, 0) >= SUGGEST_AFTER}
                  for k in (s.kinds.values() if s else [])]
-        return {"ok": True, "now": time.time(), "configured": s is not None, "config_error": err,
-                "owner": s.owner if s else None, "running": running(), "kinds": kinds,
-                "reasons": list(A.REASONS),
+        now = time.time()
+        return {"ok": True, "now": now, "configured": s is not None, "config_error": err,
+                "owner": s.owner if s else None, "owner_from": s.owner_from if s else None, "running": running(),
+                "kinds": kinds, "suggest_after": SUGGEST_AFTER, "reasons": list(A.REASONS),
+                "limits": limits_view(st, s, now) if s else None,
                 "waiting": [d.view() for d in st.drafts((DRAFTED,))],
                 "recent": [d.view() for d in st.decided(50)],
                 "audit": st.log(150)}

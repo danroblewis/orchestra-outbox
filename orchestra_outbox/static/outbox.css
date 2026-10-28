@@ -30,5 +30,16 @@
 .ob-table { width: 100%; border-collapse: collapse; font-size: 12px }
 .ob-table td, .ob-table th { border-bottom: 1px solid var(--border); padding: 5px 6px; text-align: left; vertical-align: top }
 .ob-table td.ob-data { font-family: var(--mono); font-size: 11px; color: var(--text2); word-break: break-word }
+.ob-graph { width: 100%; height: 120px; display: block; margin-top: 8px; background: var(--panel); border-radius: 6px }
+.ob-g-sends { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke }
+.ob-g-wait { fill: none; stroke: #d97706; stroke-width: 2; vector-effect: non-scaling-stroke }
+.ob-g-limit { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke }
+.ob-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; margin-top: 4px }
+.ob-legend span::before { content: ""; display: inline-block; width: 14px; height: 0; margin-right: 5px; vertical-align: middle;
+  border-top: 2px solid var(--muted) }
+.ob-legend .ob-l-sends::before { border-color: var(--accent) } .ob-legend .ob-l-wait::before { border-color: #d97706 }
+.ob-legend .ob-l-limit::before { border-top-style: dashed } .ob-legend .muted::before { display: none }
+.ob-unres { font-size: 12px; margin: 4px 0; color: var(--text) }
+.ob-suggest { font-size: 11px; color: var(--accent) }
 .ob-err { color: #f87171; font-size: 12px; margin-top: 6px }
 @media (max-width: 600px) { .ob-hide-sm { display: none } .ob-actions button { flex: 1 1 auto } }

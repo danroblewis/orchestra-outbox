@@ -6,10 +6,17 @@
   ``find`` recognises a comment already posted (``GET .../comments?since=``) after a send whose
   answer was lost. The page says so beside every comment draft.
 - ``github.label``: ``POST /repos/{o}/{r}/issues/{n}/labels`` with the one label. Adding a label the
-  item has is a no-op, so the kind is idempotent and is simply sent again."""
+  item has is a no-op, so the kind is idempotent and is simply sent again.
+- ``github.pr_open``: ``POST /repos/{o}/{r}/pulls`` ``{title, head, base, body}``, the title from the
+  draft's ``title`` field and the body its content, ending with the same hidden mark; ``find`` lists
+  the repository's pull requests from ``head`` (``GET .../pulls?head=&state=all``) for the mark.
+
+It never calls the endpoints that approve a pull request (a review with the event ``APPROVE``, or
+submitting one): ``call`` refuses them before anything is sent (the owner's decision, ``actions.py``)."""
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -20,6 +27,7 @@ from .http import JSONClient
 
 LOOKBACK_S = 120.0
 PAGES = 10
+_REVIEWS = re.compile(r"/pulls/[^/]+/reviews(/[^/]+(/events)?)?/?$")
 
 
 def mark(draft_id: str) -> str:
@@ -61,17 +69,31 @@ class GitHubSender:
             raise SendError("github:rate_limited", retry_after=float(headers.get("retry-after") or 60))
         raise SendError(f"github:http_{status}", permanent=True)
 
+    def call(self, method: str, path: str, **kw):
+        """Every request this sender makes. A review that approves is refused here, whatever asked."""
+        body = kw.get("body")
+        if method != "GET" and _REVIEWS.search("/" + path.split("?", 1)[0]) and (
+                not isinstance(body, dict) or str(body.get("event", "")).upper() not in ("COMMENT", "REQUEST_CHANGES")):
+            raise SendError("refused:pr_approval", permanent=True)
+        return self.client().call(method, path, **kw)
+
     def _issue(self, draft) -> str:
         return f"repos/{draft.target['repo']}/issues/{draft.target['number']}"
 
     def send(self, draft, kind) -> dict:
         if kind.sender == "github.label":
-            status, headers, _ = self.client().call("POST", f"{self._issue(draft)}/labels",
-                                                    body={"labels": [draft.content]})
+            status, headers, _ = self.call("POST", f"{self._issue(draft)}/labels", body={"labels": [draft.content]})
             self._check(status, headers)
             return {"repo": draft.target["repo"], "number": draft.target["number"], "label": True}
-        status, headers, out = self.client().call("POST", f"{self._issue(draft)}/comments",
-                                                  body={"body": f"{draft.content}\n\n{mark(draft.id)}"})
+        if kind.sender == "github.pr_open":
+            t = draft.target
+            status, headers, out = self.call("POST", f"repos/{t['repo']}/pulls", body={
+                "title": str(draft.fields.get("title", "")).strip(), "head": t["head"], "base": t["base"],
+                "body": f"{draft.content}\n\n{mark(draft.id)}"})
+            self._check(status, headers)
+            return {"repo": t["repo"], "number": out.get("number") if isinstance(out, dict) else None}
+        status, headers, out = self.call("POST", f"{self._issue(draft)}/comments",
+                                         body={"body": f"{draft.content}\n\n{mark(draft.id)}"})
         self._check(status, headers)
         return {"repo": draft.target["repo"], "number": draft.target["number"],
                 "comment": out.get("id") if isinstance(out, dict) else None}
@@ -79,15 +101,32 @@ class GitHubSender:
     def find(self, draft, kind) -> dict | None:
         if kind.sender == "github.label":
             return None                                  # idempotent: sending again is the check
+        if kind.sender == "github.pr_open":
+            return self._find_pr(draft)
         since = _iso((draft.sending_since or draft.created_at) - LOOKBACK_S)
         for page in range(1, PAGES + 1):
-            status, headers, out = self.client().call("GET", f"{self._issue(draft)}/comments",
-                                                      query={"since": since, "per_page": 100, "page": page})
+            status, headers, out = self.call("GET", f"{self._issue(draft)}/comments",
+                                             query={"since": since, "per_page": 100, "page": page})
             self._check(status, headers)
             items = out if isinstance(out, list) else []
             for c in items:
                 if mark(draft.id) in str(c.get("body") or ""):
                     return {"repo": draft.target["repo"], "number": draft.target["number"], "comment": c.get("id")}
+            if len(items) < 100:
+                return None
+        raise SendError("github:find_too_many_pages")
+
+    def _find_pr(self, draft) -> dict | None:
+        t = draft.target
+        head = t["head"] if ":" in t["head"] else f"{t['repo'].split('/')[0]}:{t['head']}"
+        for page in range(1, PAGES + 1):
+            status, headers, out = self.call("GET", f"repos/{t['repo']}/pulls",
+                                             query={"head": head, "state": "all", "per_page": 100, "page": page})
+            self._check(status, headers)
+            items = out if isinstance(out, list) else []
+            for p in items:
+                if mark(draft.id) in str(p.get("body") or ""):
+                    return {"repo": t["repo"], "number": p.get("number")}
             if len(items) < 100:
                 return None
         raise SendError("github:find_too_many_pages")

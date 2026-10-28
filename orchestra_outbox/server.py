@@ -4,10 +4,12 @@
   was seen before (the same draft), ``400`` with the reason when it cannot be taken;
 - ``GET /drafts/<id>``: the draft as it stands, with its content and the owner's note, for the
   drafter told by an event;
+- ``GET /limits``: the rate limits in use, their backlog, whether each is unresolvable, and their
+  usage over time (``limits.py``): what the Supervisor reads after ``outbox.rate_limit.unresolvable``;
 - ``GET /metrics``: the outbox's measurements (``measures.py``), for the plugin's instrument;
 - ``GET /health``.
 
-The drafts routes need ``Authorization: Bearer <the project's token>``, the token Orchestra hands
+The drafts and limits routes need ``Authorization: Bearer <the project's token>``, the token Orchestra hands
 every process it launches (``ORCHESTRA_EVENTS_TOKEN``; ``orchestra events endpoint`` prints it for
 others), so a process of another local user can neither draft nor read. ``/metrics`` and
 ``/health`` carry no content and need none. Requests are not logged: a body holds a draft's text."""
@@ -74,6 +76,8 @@ def _handler(srv: Server) -> type[BaseHTTPRequestHandler]:
                 return self._send(200, {"ok": True})
             if path == "/metrics":
                 return self._send(200, srv.machine.metrics(), "text/plain; version=0.0.4")
+            if path == "/limits":
+                return self._auth() and self._send(200, {"ok": True, **srv.machine.limits()})
             m = _DRAFT.match(path)
             if not m:
                 return self._send(404, {"ok": False, "error": "not found"})

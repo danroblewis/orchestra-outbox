@@ -67,3 +67,17 @@ def test_the_record_is_the_owners_alone(project, machine):
     db = project.state_dir / "outbox" / "outbox.db"
     assert stat.S_IMODE(db.stat().st_mode) == 0o600
     assert stat.S_IMODE(db.parent.stat().st_mode) == 0o700
+
+
+def test_a_long_run_of_unedited_approvals_is_shown_with_a_suggestion_and_nothing_changes(project, machine, drafter, web):
+    from orchestra_outbox.web import SUGGEST_AFTER
+
+    for i in range(SUGGEST_AFTER):
+        d = drafter.draft("pr.comment", target={"repo": "acme/widgets", "number": 7}, content=f"c{i}")
+        before = {k["name"]: k for k in web.get("/api/plugins/outbox/state").json()["kinds"]}["pr.comment"]
+        assert before["unedited_streak"] == i and before["suggest"] is False
+        approve(web, d["id"])
+    s = web.get("/api/plugins/outbox/state").json()
+    k = {k["name"]: k for k in s["kinds"]}["pr.comment"]
+    assert (k["unedited_streak"], k["suggest"], k["approval"]) == (SUGGEST_AFTER, True, "always")    # never switched
+    assert "ask the Supervisor" in (Path(__file__).parents[2] / "orchestra_outbox/static/outbox.js").read_text()

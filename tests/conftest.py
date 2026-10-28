@@ -22,7 +22,7 @@ url = "file"
 [outbox]
 owner = "person.owner"
 port = {port}
-
+{top}
 [outbox.slack]
 api = "{slack}/api"
 
@@ -66,6 +66,16 @@ labels = ["orchestra"]
 """
 
 
+@pytest.fixture(autouse=True)
+def accounts_dir(tmp_path, monkeypatch):
+    """The owner's shared accounts directory, empty and private to the test (never ~/.config)."""
+    d = tmp_path / "accounts"
+    d.mkdir(mode=0o700)
+    monkeypatch.setenv("ORCHESTRA_ACCOUNTS", str(d))
+    monkeypatch.setenv("HOME", str(tmp_path / "userhome"))     # nor the legacy ~/.config/orchestra-outbox
+    return d
+
+
 @pytest.fixture
 def slack():
     with FakeSlack() as f:
@@ -87,7 +97,8 @@ def jira():
 
 @pytest.fixture
 def make_project(tmp_path, monkeypatch, slack, github, jira):
-    """make_project(extra_toml="", port=0): a project configured against the fakes."""
+    """make_project(extra_toml="", port=0, top=""): a project configured against the fakes; ``top`` goes
+    into ``[outbox]`` itself."""
     monkeypatch.setenv("ORCHESTRATOR_HOME", str(tmp_path / "home"))
     monkeypatch.delenv("ORCHESTRA_EVENTS_URL", raising=False)
     monkeypatch.delenv("ORCHESTRA_METRICS_URL", raising=False)
@@ -100,9 +111,9 @@ def make_project(tmp_path, monkeypatch, slack, github, jira):
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
     monkeypatch.setenv("ORCHESTRA_REPO", str(repo))
 
-    def make(extra: str = "", port: int = 0):
+    def make(extra: str = "", port: int = 0, top: str = ""):
         (repo / "orchestra.toml").write_text(BASE_TOML.format(port=port, slack=slack.base, github=github.base,
-                                                              jira=jira.base) + extra)
+                                                              jira=jira.base, top=top) + extra)
         return load_project(repo)
     return make
 

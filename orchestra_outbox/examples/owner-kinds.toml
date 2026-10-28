@@ -1,0 +1,59 @@
+# The five kinds the owner starts with (decided 2026-10-27), every one approved by the owner each
+# time ("always", the default, written out so that loosening one is a visible edit).
+#
+# Install it into the owner's private overlay (orchestra.local.toml in the project's state
+# directory, or the file ORCHESTRA_CONFIG_OVERLAY names), never into a shared orchestra.toml: the
+# channels, templates and projects are the owner's. The Supervisor does this; by hand:
+#
+#   orchestra-outbox example > /tmp/kinds.toml      # this file
+#   orchestra-outbox check --file /tmp/kinds.toml   # with your accounts.toml in place
+#
+# Addresses and accounts come from ~/.config/orchestra/accounts.toml (SPEC §9): Jira's api must be
+# there (or in [outbox.jira] api). Tokens come from ~/.config/orchestra/tokens/.
+
+[outbox]
+merge_labels = ["SAIL"]
+
+[outbox.slack]
+[outbox.jira]
+
+# Reply in the Slack thread a request came from. The drafter names the thread it read the request
+# in: target = {channel = "C…", thread_ts = "<the request's ts>"}; the content is the reply.
+[outbox.kinds."slack.thread_reply"]
+sender = "slack.reply"
+approval = "always"
+
+# "Review requested", posted in the team's channel. The drafter names the channel
+# (target = {channel = "C…"}) and the reviewers twice: as text for the message ($reviewers) and as
+# their Slack ids in recipients, which a ping must name.
+[outbox.kinds."review.requested"]
+sender = "slack.message"
+template = "Review requested: $link cc: $reviewers"
+ping = true
+approval = "always"
+
+# A comment on a Jira issue: target = {issue = "OPS-12"}; the content is the comment.
+[outbox.kinds."jira.comment"]
+sender = "jira.comment"
+approval = "always"
+
+# A transition of a Jira issue: target = {issue = "OPS-12"}; the content is the transition's name
+# or id ("Done"), which the owner sees before it is made.
+[outbox.kinds."jira.transition"]
+sender = "jira.transition"
+approval = "always"
+
+# A new Jira issue from the owner's template. The template's fields are this payload: change them
+# to the owner's (project, type, labels, components, custom fields). The drafter gives $summary in
+# its fields and the description as its content; target = {} or {project = "OPS"}.
+[outbox.kinds."jira.create"]
+sender = "jira.create"
+template = "$content"
+approval = "always"
+
+[outbox.kinds."jira.create".payload]
+project = { key = "OPS" }
+issuetype = { name = "Task" }
+summary = "$summary"
+description = "$content"
+labels = ["orchestra"]

@@ -25,6 +25,7 @@ _TS = re.compile(r"^\d{9,11}\.\d{1,6}$")                # a Slack message ts
 _REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _ISSUE = re.compile(r"^[A-Z][A-Z0-9_]+-\d+$")           # a Jira issue key
 _PROJECT = re.compile(r"^[A-Z][A-Z0-9_]+$")
+_BRANCH = re.compile(r"^([A-Za-z0-9_.-]+:)?[A-Za-z0-9_.][A-Za-z0-9_./-]{0,254}$")   # a branch, perhaps owner:branch
 MAX_TARGET = 4096
 
 
@@ -50,6 +51,19 @@ def _github_pr(t: dict) -> dict:
     if not isinstance(n, int) or isinstance(n, bool) or n < 1:
         raise DraftError("target.number must be a pull request's number")
     return {"repo": repo, "number": n}
+
+
+def _github_new_pr(t: dict) -> dict:
+    repo = t.get("repo")
+    if not isinstance(repo, str) or not _REPO.match(repo):
+        raise DraftError("target.repo must be owner/name")
+    out = {"repo": repo}
+    for k in ("head", "base"):
+        v = t.get(k)
+        if not isinstance(v, str) or not _BRANCH.match(v) or ".." in v:
+            raise DraftError(f"target.{k} must be a branch name" + (" (or owner:branch)" if k == "head" else ""))
+        out[k] = v
+    return out
 
 
 def _jira_issue(t: dict) -> dict:
@@ -108,16 +122,21 @@ class Spec:
     recipient: Callable[[dict], str]           # who it reaches, when the drafter names nobody
     idempotent: bool = False                   # sending it twice changes nothing
     payload: bool = False                      # takes a [payload] table (jira.create: the issue's fields)
+    action: str = ""                           # what it does (actions.py); a script declares its own
+    needs: tuple[str, ...] = ()                # fields a draft must carry (github.pr_open: its title)
 
 
 SPECS: dict[str, Spec] = {s.sender: s for s in (
-    Spec("slack.message", "slack", _slack_channel, _text(40_000), lambda t: t["channel"]),
-    Spec("slack.reply", "slack", _slack_thread, _text(40_000), lambda t: t["channel"]),
-    Spec("github.pr_comment", "github", _github_pr, _text(60_000), _pr),
-    Spec("github.label", "github", _github_pr, _name("label"), _pr, idempotent=True),
-    Spec("jira.comment", "jira", _jira_issue, _text(32_000), lambda t: t["issue"]),
-    Spec("jira.transition", "jira", _jira_issue, _name("transition"), lambda t: t["issue"]),
-    Spec("jira.create", "jira", _jira_project, _text(32_000), lambda t: t.get("project", "jira"), payload=True),
+    Spec("slack.message", "slack", _slack_channel, _text(40_000), lambda t: t["channel"], action="slack.post"),
+    Spec("slack.reply", "slack", _slack_thread, _text(40_000), lambda t: t["channel"], action="slack.post"),
+    Spec("github.pr_comment", "github", _github_pr, _text(60_000), _pr, action="github.pr_comment"),
+    Spec("github.label", "github", _github_pr, _name("label"), _pr, idempotent=True, action="github.pr_label"),
+    Spec("github.pr_open", "github", _github_new_pr, _text(60_000), lambda t: t["repo"], action="github.pr_open",
+         needs=("title",)),
+    Spec("jira.comment", "jira", _jira_issue, _text(32_000), lambda t: t["issue"], action="jira.comment"),
+    Spec("jira.transition", "jira", _jira_issue, _name("transition"), lambda t: t["issue"], action="jira.transition"),
+    Spec("jira.create", "jira", _jira_project, _text(32_000), lambda t: t.get("project", "jira"), payload=True,
+         action="jira.create"),
     Spec("script", "script", _any, _text(100_000), lambda t: "script"),
 )}
 

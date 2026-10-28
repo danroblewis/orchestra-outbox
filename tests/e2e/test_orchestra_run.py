@@ -67,6 +67,8 @@ def test_orchestra_run_keeps_the_outbox_and_a_draft_is_sent_once(make_project, s
         wait_for(lambda: any(e["type"] == "outbox.sent" for e in bus(project)))
         assert wait_for(lambda: for_project(project).latest("outbox_drafts_sent_total",
                                                             {"kind": "review.request", "instrument": "outbox.outbox"}))
+        assert wait_for(lambda: for_project(project).latest("outbox_rate_limit",          # the usage, for the graphs
+                                                            {"kind": "sail.label", "instrument": "outbox.outbox"}))
         started = [e for e in bus(project) if e["type"] == "orchestra.process.started"]
         assert ("outbox.sender", "outbox") in [(e["data"]["name"], e["data"]["owner"]) for e in started]
         announced = [e for e in bus(project) if e["type"] == "orchestra.machine.started" and e["source"] == "outbox"]

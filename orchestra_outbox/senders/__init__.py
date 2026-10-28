@@ -20,6 +20,12 @@ class SendError(Exception):
         self.code, self.permanent, self.retry_after = code, permanent, retry_after
         self.output = output              # a script's output: kept in the record, never on the bus
 
+    @property
+    def rate_limited(self) -> bool:
+        """The system said to slow down (Slack's ``ratelimited``, an HTTP 429, GitHub's rate limit):
+        tried again when it allows, and never counted against the draft's tries."""
+        return not self.permanent and (self.code.endswith("rate_limited") or self.code.endswith("ratelimited"))
+
 
 class Sender(Protocol):
     system: str

@@ -9,10 +9,18 @@ flow (Orchestra's rules 6 and 7).
 - ``outbox_drafts_created_total{kind}``, ``outbox_drafts_rejected_total{kind}``,
   ``outbox_drafts_sent_total{kind}``, ``outbox_drafts_failed_total{kind}``;
 - ``outbox_drafts_approved_total{kind, by, edited}``: ``by`` is ``owner`` or ``policy``; the share
-  with ``edited="true"`` is the owner's edit rate, the measured stand-in for trust."""
+  with ``edited="true"`` is the owner's edit rate, the measured stand-in for trust;
+- the rate limits' usage (``limits.py``), for Orchestra's graphs and the Supervisor:
+  ``outbox_rate_limit{kind}`` and ``outbox_rate_limit_window_seconds{kind}`` (the limit and its
+  window), and per limit in use ``outbox_rate_limit_sends{kind, recipient}`` (sends begun in the
+  window now), ``outbox_rate_limit_backlog{kind, recipient}`` (drafts waiting for it) and
+  ``outbox_rate_limit_unresolvable{kind, recipient}`` (1 when waiting will not clear it); for an
+  external API's limit, ``outbox_api_rate_limit_backlog{system}`` and
+  ``outbox_api_rate_limit_unresolvable{system}``."""
 
 from __future__ import annotations
 
+from . import limits
 from .store import APPROVED, DRAFTED, FAILED, REJECTED, SENDING, SENT
 
 
@@ -20,9 +28,9 @@ def _esc(v: str) -> str:
     return v.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
-def text(store, kinds: list[str], now: float) -> str:
+def text(store, settings, now: float) -> str:
     c = store.counts()
-    seen = sorted(set(kinds) | set(c["created"]))
+    seen = sorted(set(settings.kinds) | set(c["created"]))
     by_state = c["by_state"]
     lines: list[str] = []
 
@@ -48,4 +56,22 @@ def text(store, kinds: list[str], now: float) -> str:
     series("outbox_drafts_rejected_total", "counter", "Drafts the owner rejected.", per_kind((REJECTED,)))
     series("outbox_drafts_sent_total", "counter", "Drafts sent.", per_kind((SENT,)))
     series("outbox_drafts_failed_total", "counter", "Drafts whose send failed for good.", per_kind((FAILED,)))
+    limited = sorted((k for k in settings.kinds.values() if k.limit is not None), key=lambda k: k.name)
+    series("outbox_rate_limit", "gauge", "A kind's limit: sends per recipient per window.",
+           [({"kind": k.name}, k.limit) for k in limited])
+    series("outbox_rate_limit_window_seconds", "gauge", "A kind's limit's window.", [({"kind": k.name}, k.per) for k in limited])
+    status = limits.status(store, settings, now)
+    mine = [lim for lim in status if lim.scope == "kind"]
+    apis = [lim for lim in status if lim.scope == "api"]
+    at = [({"kind": lim.kind, "recipient": lim.recipient}, lim) for lim in mine]
+    series("outbox_rate_limit_sends", "gauge", "Sends begun in the limit's window now, per kind and recipient.",
+           [(lab, lim.sent) for lab, lim in at])
+    series("outbox_rate_limit_backlog", "gauge", "Approved drafts waiting for the limit's window.",
+           [(lab, lim.waiting) for lab, lim in at])
+    series("outbox_rate_limit_unresolvable", "gauge", "1 when waiting will not clear the limit's backlog.",
+           [(lab, float(bool(lim.why))) for lab, lim in at])
+    series("outbox_api_rate_limit_backlog", "gauge", "Drafts waiting for an external API's rate limit.",
+           [({"system": lim.system}, lim.waiting) for lim in apis])
+    series("outbox_api_rate_limit_unresolvable", "gauge", "1 when a draft waited past its patience for an API.",
+           [({"system": lim.system}, float(bool(lim.why))) for lim in apis])
     return "\n".join(lines) + "\n"

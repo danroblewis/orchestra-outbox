@@ -4,8 +4,8 @@ never repeat).
 
 Mirrors the fakes in ``~/orchestra-bridges/tests`` (``fake_github.py``, ``fake_slack.py`` on the
 ``slack-bridge`` branch), copied rather than imported: those are read-only and in another
-repository, and where shared API code should live is the owner's open question (story placement
-§8, question 4)."""
+repository, and the owner decided (2026-10-27) to keep such copies until it is decided what library
+shared API code belongs in (SPEC §12, decision 5)."""
 
 from __future__ import annotations
 

@@ -1,6 +1,8 @@
-"""What can happen to a draft before it is sent: a machine requests it, the policy approves or holds
-it, the owner approves (perhaps edited) or rejects it. Each change is one transaction with its
-audit row (``store.py``, ``audit.py``). Sending is ``dispatch.py``'s."""
+"""What can happen to a draft before it is sent: a machine requests it, the policy approves it (or
+holds a first merge action for the owner), the owner approves (perhaps edited) or rejects it. Each
+change is one transaction with its audit row (``store.py``, ``audit.py``). Sending, and the rate
+limits that pace it, are ``dispatch.py``'s and ``limits.py``'s: a limit never holds a draft for the
+owner."""
 
 from __future__ import annotations
 
@@ -8,6 +10,7 @@ import time
 from collections.abc import Callable
 
 from . import MACHINE
+from . import actions as X
 from . import audit as A
 from . import templates as T
 from .config import Settings, valid_source
@@ -34,6 +37,11 @@ def _ref(body: dict, name: str) -> str | None:
     if not isinstance(v, str) or not v or len(v) > MAX_REF:
         raise DraftError(f"{name} must be a string of at most {MAX_REF} characters")
     return v
+
+
+def _not_an_approval(k, content: str) -> None:
+    if why := X.content_approves(k.sender, content):
+        raise DraftError(f"{k.name}: {why}, and no kind may approve a pull request (the owner's decision of 2026-10-27)")
 
 
 class Outbox:
@@ -67,9 +75,16 @@ class Outbox:
         missing = [t for t in k.target if t not in target]
         if missing:
             raise DraftError(f"{k.name} needs target keys {', '.join(missing)}")
+        lacking = [f for f in k.spec.needs if not str(values.get(f, "")).strip()]
+        if lacking:
+            raise DraftError(f"{k.name} ({k.sender}) needs the fields {', '.join(lacking)}")
+        _not_an_approval(k, content)
         if k.payload:
             T.render_payload(k.payload, {**values, "content": content})     # a field it lacks refuses it now
         recipients = body.get("recipients")
+        if recipients is None and k.ping:
+            raise DraftError(f"{k.name} is a ping: name the people it reaches in recipients (their ids on "
+                             f"{k.system}), so its limit counts per person")
         if recipients is None:
             recipients = [k.spec.recipient(target)]
         if (not isinstance(recipients, list) or not 0 < len(recipients) <= MAX_RECIPIENTS
@@ -89,11 +104,11 @@ class Outbox:
                 **({} if k.sender == "script" else {"target": target}), "recipients": d.recipients,
                 "approval": policy.approval, "chars": len(content)}, causationid=cause, correlationid=corr, at=now)
             if policy.approval == "auto":
-                over = self._over_limit(c, d, policy, now)
-                if over:
-                    self.store.move(c, d.id, (DRAFTED,), held="rate_limit")
+                pr = X.merge_pr(k, target, content, self.settings.merge_labels)
+                if pr and not self.store.merged_before(c, pr):
+                    self.store.move(c, d.id, (DRAFTED,), held="first_merge", held_since=now)
                     self.store.audit(c, d.id, A.HELD, MACHINE, {"draft": d.id, "kind": d.kind, "to": drafter,
-                                                                "reason": "rate_limit"},
+                                                                "reason": "first_merge", "pr": pr},
                                      causationid=created, correlationid=corr, at=now)
                 else:
                     self.store.move(c, d.id, (DRAFTED,), state=APPROVED, approved_by="policy", decided_at=now)
@@ -101,12 +116,6 @@ class Outbox:
                                                                     "by": "policy", "edited": False},
                                      causationid=created, correlationid=corr, at=now)
             return self.store.get(d.id, c), True
-
-    def _over_limit(self, c, d: Draft, policy, now: float) -> bool:
-        if policy.limit is None:
-            return False
-        recent = self.store.sends_to(c, d.kind, now - policy.per)
-        return any(sum(r in x.recipients for x in recent) >= policy.limit for r in d.recipients)
 
     def _waiting(self, c, draft_id: str) -> Draft:
         d = self.store.get(draft_id, c)
@@ -129,11 +138,16 @@ class Outbox:
                 raise DraftError("content must be a string")
             text = k.spec.content(content) if edited else d.content
             edited = edited and text != d.content
+            if k is not None:
+                _not_an_approval(k, text)
+                if pr := X.merge_pr(k, d.target, text, self.settings.merge_labels):
+                    self.store.first_merge(c, pr, d.id, now)          # later merges of this PR follow the kind
             if not self.store.move(c, d.id, (DRAFTED,), state=APPROVED, content=text, edited=edited,
-                                   approved_by="owner", decided_at=now, held=None):
+                                   approved_by="owner", approver=self.settings.owner, decided_at=now, held=None):
                 raise Conflict(f"{draft_id} was decided meanwhile")
             self.store.audit(c, d.id, A.APPROVED, self.settings.owner,
-                             {"draft": d.id, "kind": d.kind, "to": d.drafter, "by": "owner", "edited": edited},
+                             {"draft": d.id, "kind": d.kind, "to": d.drafter, "by": "owner",
+                              "approver": self.settings.owner, "edited": edited},
                              causationid=self.store.last_event(c, d.id, A.CREATED), correlationid=d.correlationid, at=now)
             return self.store.get(d.id, c)
 
@@ -147,7 +161,8 @@ class Outbox:
         now = self.clock()
         with self.store.tx() as c:
             d = self._waiting(c, draft_id)
-            if not self.store.move(c, d.id, (DRAFTED,), state=REJECTED, reason=reason, note=note, decided_at=now):
+            if not self.store.move(c, d.id, (DRAFTED,), state=REJECTED, reason=reason, note=note, decided_at=now,
+                                   approver=self.settings.owner):
                 raise Conflict(f"{draft_id} was decided meanwhile")
             self.store.audit(c, d.id, A.REJECTED, self.settings.owner,
                              {"draft": d.id, "kind": d.kind, "to": d.drafter, "reason": reason, "note": note is not None},
