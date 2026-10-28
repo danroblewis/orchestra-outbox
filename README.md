@@ -20,17 +20,16 @@ entry says otherwise, and you change that by asking the Supervisor.
 
 ## Install
 
-Beside Orchestra, as the other plugins are:
-
 ```bash
 cd ~/orchestra-outbox
-uv sync --extra dev                # Orchestra comes editable from ../orchestra_2
+uv sync --extra dev                # Orchestra comes from GitHub, at the commit uv.lock pins
 uv run python -m pytest -q
 uv run ruff check
 ```
 
 To use it with a project, run `orchestra run` and `orchestra web` from this environment (or install
-it into the environment that runs Orchestra: `uv tool install ~/orchestra_2 --with ~/orchestra-outbox`).
+it into the environment that runs Orchestra; Orchestra's README, "Install", does both from GitHub
+with no clone).
 
 Only someone logged in to Orchestra's web UI approves. The Outbox page and its API are behind
 `orchestra web`'s login (the project's web token: open the link `orchestra web` prints, or paste
@@ -38,6 +37,35 @@ Only someone logged in to Orchestra's web UI approves. The Outbox page and its A
 session must come from Orchestra's own pages: a form or a script on another site gets `403`. A
 program that approves for you would send `Authorization: Bearer <web token>`; nothing in the
 outbox does.
+
+## Developing against a local Orchestra
+
+`pyproject.toml` takes Orchestra from GitHub (`orchestra @ git+https://github.com/danroblewis/orchestra@main`),
+and `uv.lock` pins the commit it resolved to, so nothing needs cloning beside this repository.
+`uv lock --upgrade-package orchestra` moves the pin to the newest `main` (then `uv sync --extra dev`).
+
+To run against an Orchestra checkout instead, with its uncommitted changes, lay it over this
+environment for one command:
+
+```bash
+uv run --with-editable ~/orchestra_2 python -m pytest -q      # the path to your Orchestra checkout
+uv run --with-editable ~/orchestra_2 orchestra web
+```
+
+Nothing is written: `.venv`, `pyproject.toml` and `uv.lock` keep GitHub's Orchestra, and a plain
+`uv run` uses it again. Inside the command, `sys.executable` and the `orchestra` beside it import
+the checkout, so the processes the tests and the host start do too.
+
+For something that runs `.venv/bin/orchestra` directly, install the checkout into `.venv` and keep
+uv from syncing it away:
+
+```bash
+uv pip install -e ~/orchestra_2
+uv run --no-sync python -m pytest -q          # or export UV_NO_SYNC=1
+uv sync --extra dev                            # back to the locked Orchestra from GitHub
+```
+
+A plain `uv run` or `uv sync` also puts the locked Orchestra back.
 
 ## Configure
 
