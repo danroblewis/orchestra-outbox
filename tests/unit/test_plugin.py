@@ -19,6 +19,7 @@ def test_it_runs_only_where_it_is_configured():
     off = plugin(proj('[events]\nurl = "file"\n'))
     assert (off.name, off.processes, off.machines, off.collectors) == ("outbox", [], [], [])
     assert [p.path for p in off.pages] == ["/outbox"]
+    assert off.guide.is_file() and off.guide.name == "guide.md"                       # its operator's guide, configured or not
     on = plugin(proj("[outbox]\n"))
     [p] = on.processes
     assert (p.name, p.argv(), p.restart) == ("sender", [sys.executable, "-m", "orchestra_outbox", "run"], "always")

@@ -51,4 +51,5 @@ def plugin(project) -> Plugin:
         machines=[Declared(MACHINE, kind="program", mode="continuous")] if configured else [],
         processes=processes(project),
         collectors=collectors(project),
+        guide=Path(__file__).parent / "guide.md",   # how to configure it, for an AI operator (/api/guides)
     )
