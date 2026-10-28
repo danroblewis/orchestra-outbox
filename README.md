@@ -140,6 +140,7 @@ uv run orchestra outbox check --file proposed.toml --json
 | `github.pr_comment` | `{"repo": "owner/name", "number": 7}` | the comment |
 | `github.label` | same | one label name (not `approved` or `lgtm`) |
 | `github.pr_open` | `{"repo": "owner/name", "head": "branch", "base": "main"}`, and a `title` field | the description |
+| `github.issue_create` | `{"repo": "owner/name"}`, a `title` field and optionally `labels` (comma-separated) | the issue's body; its approval is always yours |
 | `jira.comment` | `{"issue": "OPS-12"}` | the comment |
 | `jira.transition` | `{"issue": "OPS-12"}` | the transition's name or id |
 | `jira.create` | `{}` or `{"project": "OPS"}` | the description (`$content` in the kind's `payload`) |

@@ -66,6 +66,13 @@ def _github_new_pr(t: dict) -> dict:
     return out
 
 
+def _github_repo(t: dict) -> dict:
+    repo = t.get("repo")
+    if not isinstance(repo, str) or not _REPO.match(repo):
+        raise DraftError("target.repo must be owner/name")
+    return {"repo": repo}
+
+
 def _jira_issue(t: dict) -> dict:
     key = t.get("issue")
     if not isinstance(key, str) or not _ISSUE.match(key):
@@ -124,6 +131,7 @@ class Spec:
     payload: bool = False                      # takes a [payload] table (jira.create: the issue's fields)
     action: str = ""                           # what it does (actions.py); a script declares its own
     needs: tuple[str, ...] = ()                # fields a draft must carry (github.pr_open: its title)
+    owner_only: bool = False                   # the owner approves every one: a kind of it may not be "auto"
 
 
 SPECS: dict[str, Spec] = {s.sender: s for s in (
@@ -133,6 +141,8 @@ SPECS: dict[str, Spec] = {s.sender: s for s in (
     Spec("github.label", "github", _github_pr, _name("label"), _pr, idempotent=True, action="github.pr_label"),
     Spec("github.pr_open", "github", _github_new_pr, _text(60_000), lambda t: t["repo"], action="github.pr_open",
          needs=("title",)),
+    Spec("github.issue_create", "github", _github_repo, _text(60_000), lambda t: t["repo"],
+         action="github.issue_create", needs=("title",), owner_only=True),
     Spec("jira.comment", "jira", _jira_issue, _text(32_000), lambda t: t["issue"], action="jira.comment"),
     Spec("jira.transition", "jira", _jira_issue, _name("transition"), lambda t: t["issue"], action="jira.transition"),
     Spec("jira.create", "jira", _jira_project, _text(32_000), lambda t: t.get("project", "jira"), payload=True,

@@ -103,7 +103,7 @@ class Outbox:
                 "draft": d.id, "kind": d.kind, "sender": k.sender,
                 **({} if k.sender == "script" else {"target": target}), "recipients": d.recipients,
                 "approval": policy.approval, "chars": len(content)}, causationid=cause, correlationid=corr, at=now)
-            if policy.approval == "auto":
+            if policy.approval == "auto" and not k.spec.owner_only:     # config refuses it too: never loosened here
                 pr = X.merge_pr(k, target, content, self.settings.merge_labels)
                 if pr and not self.store.merged_before(c, pr):
                     self.store.move(c, d.id, (DRAFTED,), held="first_merge", held_since=now)

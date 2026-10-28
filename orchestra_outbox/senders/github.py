@@ -1,4 +1,5 @@
-"""The GitHub sender: ``github.pr_comment`` and ``github.label``, as the owner, through the REST API
+"""The GitHub sender: ``github.pr_comment``, ``github.label``, ``github.pr_open`` and
+``github.issue_create``, as the owner, through the REST API
 (a token that can write the repository's issues and pull requests).
 
 - ``github.pr_comment``: ``POST /repos/{o}/{r}/issues/{n}/comments``. The body ends with a hidden
@@ -81,6 +82,8 @@ class GitHubSender:
         return f"repos/{draft.target['repo']}/issues/{draft.target['number']}"
 
     def send(self, draft, kind) -> dict:
+        if kind.sender == "github.issue_create":
+            return self._open_issue(draft)
         if kind.sender == "github.label":
             status, headers, _ = self.call("POST", f"{self._issue(draft)}/labels", body={"labels": [draft.content]})
             self._check(status, headers)
@@ -98,7 +101,34 @@ class GitHubSender:
         return {"repo": draft.target["repo"], "number": draft.target["number"],
                 "comment": out.get("id") if isinstance(out, dict) else None}
 
+    def _open_issue(self, draft) -> dict:
+        repo = draft.target["repo"]
+        body = {"title": str(draft.fields.get("title", "")).strip(), "body": f"{draft.content}\n\n{mark(draft.id)}"}
+        labels = [x.strip() for x in str(draft.fields.get("labels") or "").split(",") if x.strip()]
+        if labels:
+            body["labels"] = labels
+        status, headers, out = self.call("POST", f"repos/{repo}/issues", body=body)
+        self._check(status, headers)
+        return {"repo": repo, "number": out.get("number") if isinstance(out, dict) else None}
+
+    def _find_issue(self, draft) -> dict | None:
+        repo = draft.target["repo"]
+        since = _iso((draft.sending_since or draft.created_at) - LOOKBACK_S)
+        for page in range(1, PAGES + 1):
+            status, headers, out = self.call("GET", f"repos/{repo}/issues",
+                                             query={"since": since, "state": "all", "per_page": 100, "page": page})
+            self._check(status, headers)
+            items = out if isinstance(out, list) else []
+            for i in items:
+                if mark(draft.id) in str(i.get("body") or ""):
+                    return {"repo": repo, "number": i.get("number")}
+            if len(items) < 100:
+                return None
+        raise SendError("github:find_too_many_pages")
+
     def find(self, draft, kind) -> dict | None:
+        if kind.sender == "github.issue_create":
+            return self._find_issue(draft)
         if kind.sender == "github.label":
             return None                                  # idempotent: sending again is the check
         if kind.sender == "github.pr_open":

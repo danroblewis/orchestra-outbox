@@ -184,7 +184,7 @@ A `token` key is refused.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `sender` | string | required | `slack.message`, `slack.reply`, `github.pr_comment`, `github.label`, `github.pr_open`, `jira.comment`, `jira.transition`, `jira.create`, or `script`. A built-in sender needs its system (§4.2) configured |
+| `sender` | string | required | `slack.message`, `slack.reply`, `github.pr_comment`, `github.label`, `github.pr_open`, `github.issue_create`, `jira.comment`, `jira.transition`, `jira.create`, or `script`. A built-in sender needs its system (§4.2) configured |
 | `template` | string | none | renders the content from the draft's `fields`; `$name` or `${name}`, `$$` for a dollar, `$content` for the drafter's content. Without a template, the draft must carry `content` |
 | `payload` | table | none | `jira.create` only, and required there: the issue's `fields`, rendered at send time from the draft's fields and `$content` (the approved text). It must have `project`, `issuetype` and `summary`. A string that is exactly one placeholder (`"$sprint"`) keeps the field's type, so a number stays a number |
 | `command` | list of strings, or a string split like a shell would | none | `script` only, and required there: the command (§6.4) |
@@ -380,7 +380,7 @@ channel; `find` reads `conversations.history` (or `.replies`) with `include_all_
 the `*:history` scopes). `ok: false` with an auth error or `ratelimited` is tried again; any other
 error (`channel_not_found`, `msg_too_long`, ...) fails the draft.
 
-### 6.2 GitHub (`github.pr_comment`, `github.label`)
+### 6.2 GitHub (`github.pr_comment`, `github.label`, `github.pr_open`, `github.issue_create`)
 
 `POST /repos/{o}/{r}/issues/{n}/comments`, with `<!-- orchestra-outbox:<id> -->` appended (an HTML
 comment: not rendered; the page says so), which `find` looks for. `POST .../labels` with the one
@@ -393,6 +393,15 @@ same hidden mark. Target: `{"repo", "head", "base"}` (`head` may be `owner:branc
 the pull requests from that head (`GET .../pulls?head=&state=all`) for the mark. Pushing a branch
 is a script's (`action = "git.push"`): `git push` of a ref already there changes nothing, so the
 script is idempotent by its nature.
+
+`github.issue_create` opens an issue: `POST /repos/{o}/{r}/issues` with `title` (the draft's
+`title` field, which it must carry), the content as the body ending with the same hidden mark, and
+`labels` from the draft's optional `labels` field (names separated by commas). Target: `{"repo":
+"owner/name"}`. `find` lists the repository's issues updated since the send began (`GET
+.../issues?since=&state=all`) for the mark. **Its approval is always the owner's**: an issue is
+public and speaks as the owner, so `check` refuses `approval = "auto"` on a kind of it, and the
+outbox never approves one by policy whatever its configuration says (the owner's decision of
+2026-10-28; the Supervisor drafts upstream issues carrying its local overrides' patches).
 
 A 401 or a rate limit is tried again; another 4xx fails the draft. The sender refuses, before
 anything is sent, any call to a review endpoint (`/pulls/{n}/reviews`, `.../reviews/{id}/events`)
