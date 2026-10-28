@@ -2,6 +2,9 @@ version = 1
 revision = 3
 requires-python = ">=3.12"
 
+[manifest]
+overrides = [{ name = "orchestra", git = "https://github.com/danroblewis/orchestra?rev=main" }]
+
 [[package]]
 name = "annotated-doc"
 version = "0.0.5"
@@ -233,7 +236,7 @@ wheels = [
 [[package]]
 name = "orchestra"
 version = "1.0.0a1"
-source = { git = "https://github.com/danroblewis/orchestra?branch=main#50fe9ae0c17dacff20d2415049452a29440bced9" }
+source = { git = "https://github.com/danroblewis/orchestra?rev=main#fa0711c56003d03db950945ea61c639ab85a9206" }
 dependencies = [
     { name = "fastapi" },
     { name = "psutil" },
@@ -261,7 +264,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
-    { name = "orchestra", git = "https://github.com/danroblewis/orchestra?branch=main" },
+    { name = "orchestra", specifier = ">=1.0.0a1,<1.0.0rc0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
 ]
