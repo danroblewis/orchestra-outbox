@@ -27,6 +27,7 @@
 .ob-s-held { background: #78350f; color: #fde68a }
 .ob-row { border-bottom: 1px solid var(--border); padding: 8px 2px; font-size: 12px }
 .ob-row summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center }
+.ob-trail { flex-basis: 100% }
 .ob-table { width: 100%; border-collapse: collapse; font-size: 12px }
 .ob-table td, .ob-table th { border-bottom: 1px solid var(--border); padding: 5px 6px; text-align: left; vertical-align: top }
 .ob-table td.ob-data { font-family: var(--mono); font-size: 11px; color: var(--text2); word-break: break-word }

@@ -12,7 +12,7 @@
 <main class="ob-page">
   <header class="ob-head">
     <h1>Outbox</h1>
-    <p class="muted">Nothing is sent as you until you approve it here, unless a kind is set to <code>auto</code> in <code>[outbox.kinds]</code>. Approving sends; rejecting tells the machine that drafted it why.</p>
+    <p class="muted">Nothing is sent as you until you approve it here, unless its kind is approved by configuration (<code>approval = "auto"</code> in <code>[outbox.kinds]</code>). Approving sends; rejecting tells the machine that drafted it why.</p>
     <div id="ob-status" class="ob-status"></div>
   </header>
   <h2>Waiting for you <span class="count" id="ob-nwait"></span></h2>
