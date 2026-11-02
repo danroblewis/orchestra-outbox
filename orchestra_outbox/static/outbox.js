@@ -5,7 +5,18 @@
   const API = "/api/plugins/outbox";
   let waitingKey = null, D = null;
 
-  const when = (t) => (t ? new Date(t * 1000).toLocaleString() : "");
+  // Every time on the page through the core's one formatter, with the date, the seconds and the zone.
+  const when = (t) => (t ? Orchestra.when(t, { date: true, seconds: true }) : "");
+  // One name for a kind's approval and for a draft approved without the owner: "by configuration".
+  const APPROVAL = { always: "by you", auto: "by configuration" };
+  // A decided draft's trail, with times: drafted · approved (by you or by configuration) · sent, or drafted · rejected.
+  function trail(d) {
+    const steps = [`drafted ${when(d.created_at)}`];
+    if (d.state === "rejected") steps.push(`rejected ${when(d.decided_at)}`);
+    else if (d.decided_at) steps.push(`approved ${d.approved_by === "policy" ? "by configuration" : "by you"} ${when(d.decided_at)}`);
+    if (d.sent_at) steps.push(`sent ${when(d.sent_at)}`);
+    return `<span class="ob-trail muted">${steps.map(esc).join(" · ")}</span>`;
+  }
   const age = (t) => (t && D ? ago(Math.max(D.now - t, 0)) : "");
   const target = (t) => Object.entries(t || {}).map(([k, v]) => `${esc(k)} <b>${esc(v)}</b>`).join(" · ");
   const badge = (s) => `<span class="ob-badge ob-s-${esc(s)}">${esc(s)}</span>`;
@@ -64,9 +75,9 @@
     const err = d.error ? `<span class="ob-bad">${esc(d.error)}</span>` : "";
     return `<details class="ob-row"><summary>${badge(d.state)}<span class="ob-kind">${esc(d.kind)}</span>
         <span>${target(d.target)}</span><span class="muted">by ${esc(d.drafter)}</span>
-        ${d.edited ? `<span class="ob-badge">edited</span>` : ""}${d.approved_by === "policy" ? `<span class="ob-badge">auto</span>` : ""}
+        ${d.edited ? `<span class="ob-badge">edited</span>` : ""}${d.approved_by === "policy" ? `<span class="ob-badge">approved by configuration</span>` : ""}
         ${d.held === "rate_limit" || d.held === "api_rate_limit" ? `<span class="ob-badge ob-s-held">${d.held === "rate_limit" ? "waiting for its limit" : "waiting for the API's rate limit"}${d.next_attempt_at ? ` until ${esc(when(d.next_attempt_at))}` : ""}</span>` : ""}
-        ${why}${err}${where}<span class="muted">${esc(when(d.sent_at || d.decided_at))}</span></summary>
+        ${why}${err}${where}${trail(d)}</summary>
       <pre class="ob-pre">${esc(d.content)}</pre>
       ${d.edited ? `<div class="ob-note">as drafted:</div><pre class="ob-pre">${esc(d.original)}</pre>` : ""}
       ${d.output ? `<div class="ob-note">the script's output:</div><pre class="ob-pre">${esc(d.output)}</pre>` : ""}</details>`;
@@ -119,8 +130,8 @@
     $("ob-nlimits").textContent = L.length;
     $("ob-limits").innerHTML = L.length ? L.map(limit).join("") : `<div class="empty">No rate limit is in use.</div>`;
     $("ob-kinds").innerHTML = D.kinds.length ? `<table class="ob-table"><tr><th>kind</th><th>sender</th><th>approval</th><th>limit per recipient</th><th>unedited approvals in a row</th></tr>${
-      D.kinds.map((k) => `<tr><td class="ob-kind">${esc(k.name)}${k.ping ? ' <span class="ob-badge">ping</span>' : ""}</td><td>${esc(k.sender)}</td><td>${esc(k.approval)}</td>
-        <td>${k.limit == null ? "none" : `${k.limit} per ${esc(ago(k.per))}`}</td><td>${k.unedited_streak}${k.suggest ? `<div class="ob-suggest">could be automatic: ask the Supervisor</div>` : ""}</td></tr>`).join("")}</table>`
+      D.kinds.map((k) => `<tr><td class="ob-kind">${esc(k.name)}${k.ping ? ' <span class="ob-badge">ping</span>' : ""}</td><td>${esc(k.sender)}</td><td>${esc(APPROVAL[k.approval] || k.approval)}</td>
+        <td>${k.limit == null ? "none" : `${k.limit} per ${esc(ago(k.per))}`}</td><td>${k.unedited_streak}${k.suggest ? `<div class="ob-suggest">could be approved by configuration: ask the Supervisor</div>` : ""}</td></tr>`).join("")}</table>`
       : `<div class="empty">No kinds are configured ([outbox.kinds] in orchestra.toml). Ask the Supervisor to add one.</div>`;
     $("ob-audit").innerHTML = D.audit.length ? `<table class="ob-table"><tr><th>when</th><th>event</th><th>source</th><th class="ob-hide-sm">data</th></tr>${
       D.audit.map((a) => `<tr><td>${esc(when(a.at))}</td><td>${esc(a.type)}${a.published ? "" : ' <span class="muted">(not on the bus yet)</span>'}</td>
