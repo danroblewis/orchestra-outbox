@@ -11,10 +11,13 @@ For the Supervisor's tools (and anyone editing by hand)::
 
 Exit 0 when the configuration is valid, 1 when it is not, 2 when it cannot be read. The JSON is
 ``{"ok": bool, "errors": [...], "warnings": [...], "owner": id, "owner_from": where,
-"kinds": {name: {sender, approval, limit, per, ping, action}}}``.
+"writes": [systems], "writes_from": file or "default", "off": {name: why},
+"kinds": {name: {sender, approval, limit, per, ping, action, system, off}}}``.
 Errors are what the outbox would refuse to start with. Warnings are what would make a send fail
 later (a script that is not there or not executable, a token file with loose permissions); they do
-not fail the check, because the target repository or the token may arrive after the config."""
+not fail the check, because the target repository or the token may arrive after the config.
+A kind whose system is read-only (``writes`` in the owner's accounts.toml) is neither: it is
+**off**, named in ``off`` with the reason, and its drafts are refused, never sent."""
 
 from __future__ import annotations
 
@@ -67,8 +70,9 @@ def check(raw: dict, repo_root: Path) -> dict:
         errors = errors or [NO_SECTION]
         return {"ok": False, "errors": errors, "warnings": [], "kinds": {}}
     return {"ok": True, "errors": [], "warnings": warnings(s, repo_root), "owner": s.owner, "owner_from": s.owner_from,
+            "writes": list(s.writes), "writes_from": s.writes_from, "off": s.off,
             "kinds": {k.name: {"sender": k.sender, "approval": k.approval, "limit": k.limit, "per": k.per,
-                               "ping": k.ping, "action": k.action}
+                               "ping": k.ping, "action": k.action, "system": k.writes_system, "off": k.off}
                       for k in s.kinds.values()}}
 
 
@@ -121,6 +125,8 @@ def main(args: list[str] | None = None) -> int:
             print(f"error: {e}")
         for w in out["warnings"]:
             print(f"warning: {w}")
+        for why in out.get("off", {}).values():
+            print(f"off: {why}")
         if out["ok"]:
             kinds = ", ".join(f"{n} ({v['sender']}, {v['approval']})" for n, v in out["kinds"].items()) or "none"
             print(f"ok: kinds {kinds}; approvals publish as {out['owner']} ({out['owner_from']})")

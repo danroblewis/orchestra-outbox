@@ -82,12 +82,13 @@ def router(project) -> APIRouter:
         streaks = st.streaks()
         kinds = [{"name": k.name, "sender": k.sender, "approval": k.approval, "limit": k.limit, "per": k.per,
                   "ping": k.ping, "action": k.action, "template": k.template is not None,
-                  "unedited_streak": streaks.get(k.name, 0),
-                  "suggest": k.approval == "always" and streaks.get(k.name, 0) >= SUGGEST_AFTER}
+                  "unedited_streak": streaks.get(k.name, 0), "off": k.off,
+                  "suggest": not k.off and k.approval == "always" and streaks.get(k.name, 0) >= SUGGEST_AFTER}
                  for k in (s.kinds.values() if s else [])]
         now = time.time()
         return {"ok": True, "now": now, "configured": s is not None, "config_error": err,
                 "owner": s.owner if s else None, "owner_from": s.owner_from if s else None, "running": running(),
+                "writes": list(s.writes) if s else None,
                 "kinds": kinds, "suggest_after": SUGGEST_AFTER, "reasons": list(A.REASONS),
                 "limits": limits_view(st, s, now) if s else None,
                 "waiting": [d.view() for d in st.drafts((DRAFTED,))],

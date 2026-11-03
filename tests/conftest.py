@@ -66,11 +66,24 @@ labels = ["orchestra"]
 """
 
 
+WRITES_ALL = 'writes = ["github", "jira", "slack"]\n'
+
+
+def opt_in(d, text: str = "") -> None:
+    """``accounts.toml`` in ``d`` that lets the Outbox write to every system the fakes speak (the
+    default is read-only toward Jira and Slack), then ``text``."""
+    (d / "accounts.toml").write_text(WRITES_ALL + text, encoding="utf-8")
+    (d / "accounts.toml").chmod(0o600)
+
+
 @pytest.fixture(autouse=True)
 def accounts_dir(tmp_path, monkeypatch):
-    """The owner's shared accounts directory, empty and private to the test (never ~/.config)."""
+    """The owner's shared accounts directory, private to the test (never ~/.config). Its
+    accounts.toml opts in to writing to every system, since the tests send to the fakes; a test of
+    the default removes it or writes its own."""
     d = tmp_path / "accounts"
     d.mkdir(mode=0o700)
+    opt_in(d)
     monkeypatch.setenv("ORCHESTRA_ACCOUNTS", str(d))
     monkeypatch.setenv("HOME", str(tmp_path / "userhome"))     # nor the legacy ~/.config/orchestra-outbox
     return d

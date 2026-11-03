@@ -112,6 +112,7 @@ you each time, come with the outbox: `orchestra outbox example` prints them (a S
 mkdir -p -m 700 ~/.config/orchestra/tokens
 cat > ~/.config/orchestra/accounts.toml <<'TOML'
 owner = "person.daniel"             # your person id: person.<key> in the identity map
+writes = ["github"]                 # what the Outbox may write to (the default); before any table
 [slack]
 account = "U012AB3CD"               # your member id
 [github]
@@ -123,6 +124,15 @@ TOML
 chmod 600 ~/.config/orchestra/accounts.toml
 printf %s 'xoxp-...' > ~/.config/orchestra/tokens/slack-token && chmod 600 ~/.config/orchestra/tokens/slack-token
 ```
+
+**Read-only by default.** `writes` in `accounts.toml` lists the systems the Outbox may write to:
+`github`, `jira`, `slack`, `discord`. When the file or the key is absent it is `["github"]`, so
+Jira and Slack are read-only until you list them (`writes = ["github", "jira", "slack"]`). A kind
+of a read-only system is **off**: `check` names it and why, and its drafts are recorded as refused
+(`refused:read_only:jira`), never sent, also when you take a system out while drafts wait. The key
+lives only in `accounts.toml`; in `orchestra.toml` or the overlay it is refused, so the Supervisor
+cannot turn a system on. It covers what goes through the Outbox: keep read-only Jira and Slack
+tokens at work for the rest (SPEC §4.6).
 
 Your approvals publish as your person id: `[outbox] owner`, else `owner` in `accounts.toml`, else
 the identity map's entry (`[bridges] people`, or `[outbox] people`) that lists one of your accounts
@@ -183,11 +193,13 @@ script:
 sender = "script"
 command = ["scripts/outbox/arc-port.sh"]
 action = "other"                        # what it does: other, git.push, github.pr_open, github.pr_merge
+system = "github"                       # what it writes to: github, jira, slack, discord or none
 target = ["repo", "sha", "branch"]
 ```
 
 A script says what it does in `action`: `other`, `git.push`, `github.pr_open`, `github.pr_merge`
-(`github.pr_approve` is refused).
+(`github.pr_approve` is refused), and which system it writes to in `system`, which `writes`
+governs. A script kind without `system` is off: the Outbox cannot tell what it writes to.
 
 Once you approve a draft, the script runs in the repository root with the draft as JSON on stdin
 (`id`, `content`, `target`, `fields`, ...) and `OUTBOX_DRAFT_ID` in its environment. Exit 0 is sent;

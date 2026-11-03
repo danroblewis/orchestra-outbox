@@ -66,7 +66,8 @@ def test_a_kind_or_script_that_approves_a_pull_request_is_refused_by_the_check()
 
 
 def test_a_script_file_that_approves_is_warned_at_the_check_and_refused_at_sending(make_project, web):
-    project = make_project('\n[outbox.kinds."sneaky"]\nsender = "script"\ncommand = ["scripts/s.sh"]\naction = "other"\n')
+    project = make_project('\n[outbox.kinds."sneaky"]\nsender = "script"\ncommand = ["scripts/s.sh"]\naction = "other"\n'
+                           'system = "github"\n')
     (project.repo_root / "scripts").mkdir()
     s = project.repo_root / "scripts" / "s.sh"
     s.write_text('#!/bin/sh\ncurl -X POST "$API/repos/a/b/pulls/7/reviews" -d \'{"event": "APPROVE"}\'\n'
@@ -125,7 +126,7 @@ def test_the_first_merge_action_on_a_pull_request_is_the_owners_and_later_ones_f
 
 def test_a_merge_script_needs_the_pull_request_and_its_first_use_is_the_owners(make_project):
     project = make_project('\n[outbox.kinds."merge"]\nsender = "script"\ncommand = ["scripts/merge.sh"]\n'
-                             'action = "github.pr_merge"\napproval = "auto"\n')
+                             'action = "github.pr_merge"\napproval = "auto"\nsystem = "github"\n')
     m = Machine(project)
     with pytest.raises(DraftError, match="needs target keys repo, number"):
         req(m, "merge", content="merge it")

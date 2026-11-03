@@ -13,9 +13,9 @@ from . import MACHINE
 from . import actions as X
 from . import audit as A
 from . import templates as T
-from .config import Settings, valid_source
+from .config import Settings, refusal, valid_source
 from .kinds import DraftError, check
-from .store import APPROVED, DRAFTED, REJECTED, Draft, Store, new_id
+from .store import APPROVED, DRAFTED, FAILED, REJECTED, Draft, Store, new_id
 
 MAX_REF = 200
 MAX_NOTE = 4000
@@ -103,7 +103,12 @@ class Outbox:
                 "draft": d.id, "kind": d.kind, "sender": k.sender,
                 **({} if k.sender == "script" else {"target": target}), "recipients": d.recipients,
                 "approval": policy.approval, "chars": len(content)}, causationid=cause, correlationid=corr, at=now)
-            if policy.approval == "auto" and not k.spec.owner_only:     # config refuses it too: never loosened here
+            if code := refusal(self.settings, k):              # read-only: recorded as refused, never sent
+                self.store.move(c, d.id, (DRAFTED,), state=FAILED, error=f"refused:{code}", decided_at=now)
+                self.store.audit(c, d.id, A.SEND_FAILED, MACHINE, {"draft": d.id, "kind": d.kind, "to": drafter,
+                                                                   "error": f"refused:{code}", "attempts": 0},
+                                 causationid=created, correlationid=corr, at=now)
+            elif policy.approval == "auto" and not k.spec.owner_only:     # config refuses it too: never loosened here
                 pr = X.merge_pr(k, target, content, self.settings.merge_labels)
                 if pr and not self.store.merged_before(c, pr):
                     self.store.move(c, d.id, (DRAFTED,), held="first_merge", held_since=now)

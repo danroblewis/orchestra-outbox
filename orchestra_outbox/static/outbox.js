@@ -130,7 +130,7 @@
     $("ob-nlimits").textContent = L.length;
     $("ob-limits").innerHTML = L.length ? L.map(limit).join("") : `<div class="empty">No rate limit is in use.</div>`;
     $("ob-kinds").innerHTML = D.kinds.length ? `<table class="ob-table"><tr><th>kind</th><th>sender</th><th>approval</th><th>limit per recipient</th><th>unedited approvals in a row</th></tr>${
-      D.kinds.map((k) => `<tr><td class="ob-kind">${esc(k.name)}${k.ping ? ' <span class="ob-badge">ping</span>' : ""}</td><td>${esc(k.sender)}</td><td>${esc(APPROVAL[k.approval] || k.approval)}</td>
+      D.kinds.map((k) => `<tr><td class="ob-kind">${esc(k.name)}${k.ping ? ' <span class="ob-badge">ping</span>' : ""}${k.off ? ` <span class="ob-badge ob-bad" title="${esc(k.off)}">off: read-only</span>` : ""}</td><td>${esc(k.sender)}</td><td>${esc(APPROVAL[k.approval] || k.approval)}</td>
         <td>${k.limit == null ? "none" : `${k.limit} per ${esc(ago(k.per))}`}</td><td>${k.unedited_streak}${k.suggest ? `<div class="ob-suggest">could be approved by configuration: ask the Supervisor</div>` : ""}</td></tr>`).join("")}</table>`
       : `<div class="empty">No kinds are configured ([outbox.kinds] in orchestra.toml). Ask the Supervisor to add one.</div>`;
     $("ob-audit").innerHTML = D.audit.length ? `<table class="ob-table"><tr><th>when</th><th>event</th><th>source</th><th class="ob-hide-sm">data</th></tr>${
