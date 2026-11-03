@@ -210,10 +210,13 @@ sender, so those go through a script.
 sender = "script"
 command = ["scripts/outbox/arc-port.sh"]   # a first argument with "/" is relative to the repository; otherwise PATH
 action = "other"                           # other | git.push | github.pr_open | github.pr_merge
+system = "github"                          # what it writes to: github | jira | slack | discord | none
 target = ["repo", "sha", "branch"]         # keys a draft's target must carry
 timeout = "10m"                            # 1s..1h, default 120s
 ```
 
+- `system` declares which system the script writes to; `writes` (below) governs it like a built-in
+  sender's. Without it the kind is off. Declare it honestly; it is the owner's guard.
 - `action` declares what the script does. It is required, and it is how the Outbox knows a merge
   (`github.pr_merge` adds `repo` and `number` to `target` and gets the first-merge guard).
   Declare it honestly: a merge script declared `other` loses that guard. `github.pr_approve` is
@@ -226,6 +229,20 @@ timeout = "10m"                            # 1s..1h, default 120s
 - You may find or point to a script the owner already has in their codebase. Writing a new one,
   or changing what it does, is code the owner reviews. Whether a script that pushes or merges may
   exist at all is the owner's decision.
+
+## Read-only systems: `writes` (the owner's alone)
+
+Jira, Slack and Discord are **read-only by default**: only GitHub (branches, pull requests) is
+written to unless the owner's `~/.config/orchestra/accounts.toml` lists more in its top-level
+`writes` (default `["github"]`). A kind of a read-only system, and a script kind with no `system`,
+is **off**: the check reports it under `off` with the reason (not an error), and its drafts are
+recorded as `refused:read_only:<system>` and never sent. Only the owner can turn a system on, in
+that file. You cannot: `writes` in `orchestra.toml` or the overlay is refused, you never edit
+`accounts.toml`, and you never work around it (a script declared `none` or `github` that writes to
+Jira, a direct API call). When asked to post in Slack, comment on or transition a Jira issue under
+read-only, say you cannot and why: that system is read-only for Orchestra by the owner's choice
+(`writes` in their accounts.toml); offer the text for them to post themselves, and that they can
+list the system in `writes` if they want Orchestra to send it.
 
 ## Sensitive actions (fixed; no setting changes them)
 
@@ -258,6 +275,7 @@ timeout = "10m"                            # 1s..1h, default 120s
 ```toml
 # ~/.config/orchestra/accounts.toml (0600; the directory 0700; $ORCHESTRA_ACCOUNTS moves it). No secrets.
 owner = "person.daniel"
+writes = ["github"]             # the systems that may be written to; the default (the owner's alone)
 [slack]
 account = "U012AB3CD"           # the owner's member id
 [github]
@@ -296,6 +314,8 @@ an account id the owner has not given you.
 ## Pitfalls
 
 - A kind for a system whose table is absent is an error. Add `[outbox.<system>]` too.
+- A kind whose system is read-only is off, not an error: the check passes and lists it under `off`.
+  That is the owner's choice; tell them, do not "fix" it.
 - The owner's starting kinds (`orchestra outbox example`) include `[outbox.jira]`, which needs a
   Jira `api` from somewhere, and `merge_labels = ["SAIL"]`, which is wrong for an owner without
   SAIL. Install it into the overlay and adjust it, then check.

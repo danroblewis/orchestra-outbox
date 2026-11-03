@@ -1,6 +1,6 @@
 # The Outbox: specification
 
-Status: phase 1 with the owner's decisions of 2026-10-27 (§12). The design. `AGENTS.md` lists the
+Status: phase 1 with the owner's decisions of 2026-10-27 and 2026-11-03 (§12). The design. `AGENTS.md` lists the
 rules that must not break.
 
 The Outbox is an Orchestra plugin (`orchestra-outbox`, plugin `outbox`). It is the one way
@@ -147,7 +147,9 @@ characters or numbers); `recipients` 1 to 50 ids; refs up to 200 characters; a b
 All of it is `[outbox]` in the project's `orchestra.toml` or the owner's private overlay
 (`orchestra.local.toml` in the state directory, Orchestra's SPEC §8.1), which is where the owner's
 channels, templates and kinds belong. Orchestra ignores the section. Tokens, API addresses and the
-owner's account ids are in neither: they are the shared accounts directory's (§9). **Unknown keys are refused**, so a typo is an error, not a
+owner's account ids are in neither: they are the shared accounts directory's (§9). Nor is what
+may be written to: that is `writes` in the shared `accounts.toml` (§4.6), and a `writes` key here
+is refused. **Unknown keys are refused**, so a typo is an error, not a
 silent default. The machine re-reads the section when the file changes; a version that fails the
 check is logged and the last good one stands; the web server re-reads it on every request.
 
@@ -190,6 +192,7 @@ A `token` key is refused.
 | `command` | list of strings, or a string split like a shell would | none | `script` only, and required there: the command (§6.4) |
 | `timeout` | duration | `"120s"` | `script` only: 1 s to 1 h |
 | `target` | list of key names | `[]` | `script` only: the target keys a draft must carry (`repo` and `number` are added for `github.pr_merge`) |
+| `system` | string | none | `script` only: the system the script writes to, `github`, `jira`, `slack`, `discord` or `none`. A script cannot be read for intent, so this is declared, like `action`; without it the kind is off (§4.6) |
 | `action` | string | required for `script` | `script` only: what it does, `other`, `git.push`, `github.pr_open`, `github.pr_merge` or `github.pr_approve` (refused, §6.6). A built-in sender's action is known |
 | `ping` | boolean | `false` | the kind reaches people (a ping, a nudge): a draft must name its `recipients`, so the limit counts per person |
 | `approval` | `"always"` or `"auto"` | `"always"` | `"auto"`: approved without the owner (but for a first merge action, §6.6) |
@@ -259,6 +262,7 @@ customfield_10007 = "$sprint"          # the sprint field, a number
 sender = "script"
 command = ["scripts/outbox/arc-port.sh"]
 action = "other"                        # what it does: other, git.push, github.pr_open, github.pr_merge
+system = "github"                       # what it writes to (§4.6): github, jira, slack, discord or none
 target = ["repo", "sha", "branch"]
 timeout = "10m"
 ```
@@ -279,12 +283,52 @@ orchestra outbox limits [--repo PATH] [--json]
 ```
 
 Exit 0 valid, 1 not, 2 unreadable. `--json` answers `{"ok", "errors": [...], "warnings": [...],
-"owner", "owner_from", "kinds": {name: {sender, approval, limit, per, ping, action}}}`. Every error is a sentence naming the key, e.g.
+"owner", "owner_from", "writes", "writes_from", "off": {name: why}, "kinds": {name: {sender,
+approval, limit, per, ping, action, system, off}}}`. Every error is a sentence naming the key, e.g.
 `[outbox.kinds."a"] uses the sender slack.message, but [outbox.slack] is not configured`. All
 errors are reported at once. Warnings (a script that is not a file or not executable, a script file that names a way to
 approve a pull request, a token file readable by others, an `auto` label kind with no
-`merge_labels`, an owner that is not a person id) do not fail it. `limits` prints §5.3's status. The Python form is `orchestra_outbox.check.check(raw,
+`merge_labels`, an owner that is not a person id) do not fail it. Nor does a kind that is off
+(§4.6): it is listed under `off` with the reason, and printed as `off: <why>`. `limits` prints §5.3's status. The Python form is `orchestra_outbox.check.check(raw,
 repo_root)` and `orchestra_outbox.config.problems(raw)`.
+
+### 4.6 What may be written: `writes`
+
+**Decision (the owner, 2026-11-03): read-only toward Jira, Slack and Discord is the default. Only
+GitHub (branches and pull requests, for the Supervisor's own changes) is written to unless the
+owner says otherwise.** The switch is `writes`, a top-level key of the owner's shared
+`accounts.toml` (§9), a list of systems:
+
+```toml
+writes = ["github"]                     # the default, when the file or the key is absent
+# at home: writes = ["github", "jira", "slack"]
+```
+
+- It is a closed list. A system not in it is read-only, a system added later (Discord) is too, and
+  `writes = []` makes GitHub read-only as well.
+- **It lives only in `accounts.toml`**, the owner's file outside every repository and state
+  directory, which no Supervisor tool writes. `writes` in `[outbox]`, in a system's table or at the
+  top of `orchestra.toml` (or the overlay) is a check error, so `set_setting` cannot turn a system on.
+- **At the check**, a kind whose system is read-only is **off**: it is otherwise checked as usual,
+  and reported under `off` with the reason, never as an error, so the Outbox starts and its other
+  kinds work. A script kind's system is its declared `system` (§4.3); one with no `system` is off
+  whatever `writes` says, because the Outbox cannot tell what it writes to. `system = "none"` is a
+  script that writes to no outside system.
+- **At drafting**, a draft of an off kind is recorded and at once `failed` with
+  `refused:read_only:<system>` (`refused:read_only:undeclared` for a script with no `system`),
+  published as `outbox.send_failed` from `outbox`; it never reaches the owner and is never sent.
+- **At sending**, every try checks again, against `writes` as the settings were read and as the
+  file says now: a draft approved before the owner took its system out is `failed` with the same
+  code, its sender never called (§6). The machine also re-reads its settings when `accounts.toml`
+  changes, so putting a system in takes effect without a restart.
+- Local fakes are not exempt. A loopback `api` does not prove a fake (a local proxy or tunnel can
+  reach the real system, and the Supervisor writes `api`), so tests opt in like anyone else, with
+  `writes` in their own temporary `accounts.toml`.
+
+This switch covers what goes through the Outbox. A script's own credentials, the program host's
+programs and agent sessions' shells are outside it: pair it with read-only Jira and Slack
+credentials, which are the boundary for those (the writes audit,
+`orchestra_2/docs/reports/2026-11-03-writes-audit.md`).
 
 ## 5. Approval
 
@@ -363,7 +407,8 @@ stores and graphs.
 The outbox machine tries every approved draft within half a second, within its kind's limit
 (§5.3). It claims it (`sending`), calls the sender, and records `sent`, `failed`, or "not known"
 (§2's diagram). A draft whose content or script would approve a pull request is `failed` with
-`refused:pr_approval` before its sender is called (§6.6). **Every try after
+`refused:pr_approval` before its sender is called (§6.6), and one whose kind's system is read-only
+is `failed` with `refused:read_only:<system>` (§4.6). **Every try after
 the first asks the sender to find the draft before sending again**, by a mark it carries where it
 landed. A restart resumes the same way: a draft left `sending` is found or sent; a draft left
 `approved` is sent; a draft left `drafted` waits. A send is never repeated blindly, except where
@@ -612,6 +657,7 @@ outbox's):
 ```toml
 # accounts.toml: no secret here, and never in a repository
 owner = "person.daniel"            # the owner's person id (§4.1)
+writes = ["github"]                # the systems that may be written to (§4.6); top-level, before any table
 
 [slack]
 account = "U012AB3CD"              # the owner's member id
@@ -693,3 +739,9 @@ The open questions of phase 1, answered by the owner on **2026-10-27**:
    (§5.1)
 7. **The owner's identity.** Approvals carry the owner's person id. (§4.1, §7)
 8. **Who can reach the page.** Solved by Orchestra's web login. (§5.1)
+
+On **2026-11-03**:
+
+9. **Read-only by default.** At work Orchestra has no write access to Jira or Slack; only GitHub
+   (branches, pull requests) stays writable for the Supervisor's own changes. `writes` in the
+   owner's `accounts.toml`, default `["github"]`, and only there. (§4.6)

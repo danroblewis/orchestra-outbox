@@ -14,6 +14,7 @@ The layout (SPEC.md §9)::
 ``accounts.toml``::
 
     owner = "person.daniel"           # the owner's person id: person.<key> of the identity map
+    writes = ["github"]               # the systems Orchestra may write to (the default); before any table
 
     [slack]
     account = "U012AB3CD"             # the owner's member id
@@ -23,6 +24,14 @@ The layout (SPEC.md §9)::
     [jira]
     api = "https://jira.example.com"
     account = "dlewis"
+
+``writes`` is the owner's switch for writing: the systems (``github``, ``jira``, ``slack``,
+``discord``) the Outbox may write to as the owner (read-only credentials remain the boundary for
+what does not go through it). It is a closed list: a system not in it is
+read-only, so a system added later is read-only too until the owner lists it. When the file or the
+key is absent it is ``["github"]`` (branches and pull requests for the Supervisor's own changes).
+It lives here and only here, the owner's file outside every repository, so no tool that edits
+orchestra.toml or its overlay can turn a system on.
 
 A system's table may carry other keys (a reader takes what it knows), so another program can keep
 its own beside these. Neither file is ever in a repository or in ``orchestra.toml``: a file inside
@@ -44,6 +53,7 @@ DEFAULT_DIR = Path("~/.config/orchestra")
 FILE = "accounts.toml"
 TOKENS = "tokens"
 _UNSAFE = re.compile(r"[^a-z0-9._-]")
+WRITES_DEFAULT: tuple[str, ...] = ("github",)
 
 
 class AccountsError(Exception):
@@ -113,6 +123,11 @@ class Accounts:
     owner: str | None = None                          # the owner's person id
     systems: dict[str, dict] = field(default_factory=dict)
     path: Path | None = None                          # the file read, if any
+    writes: tuple[str, ...] = WRITES_DEFAULT          # the systems that may be written to; the rest are read-only
+    writes_set: bool = False                          # whether the file names them (else the default)
+
+    def can_write(self, system: str) -> bool:
+        return system in self.writes
 
     def api(self, system: str) -> str | None:
         v = self.systems.get(system, {}).get("api")
@@ -142,7 +157,13 @@ class Accounts:
             api = t.get("api")
             if api is not None and not isinstance(api, str):
                 raise AccountsError(f"{path}: [{name}] api must be a URL")
-        return cls(owner, systems, path)
+        writes, writes_set = WRITES_DEFAULT, "writes" in raw
+        if writes_set:
+            w = raw["writes"]
+            if not isinstance(w, list) or not all(isinstance(x, str) and x.strip() for x in w):
+                raise AccountsError(f'{path}: writes must be a list of system names (writes = ["github"])')
+            writes = tuple(dict.fromkeys(x.strip().lower() for x in w))
+        return cls(owner, systems, path, writes, writes_set)
 
 
 def person_in_map(map_path: Path | None, accounts: Accounts) -> str | None:

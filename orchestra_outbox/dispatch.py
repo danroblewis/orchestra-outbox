@@ -17,7 +17,8 @@ never uses up a draft's tries: it is tried when the API allows (``held: api_rate
 Before a draft is first claimed, its kind's limit is asked (``limits.wait``): over it, the draft
 stays ``approved``, ``held: rate_limit``, until the window frees a place. It is never dropped and
 never sent back to the owner. And before any send, a draft whose content or script would approve a
-pull request is refused for good (``actions.py``). Each outcome is an audit row, published by the
+pull request is refused for good (``actions.py``), and so is a draft whose kind's system is
+read-only (``writes`` in the owner's accounts.toml, read again at each send: ``refused:read_only:<system>``). Each outcome is an audit row, published by the
 machine (``audit.py``)."""
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from collections.abc import Callable
 from . import MACHINE, limits
 from . import actions as X
 from . import audit as A
-from .config import Settings
+from .config import Settings, refusal
 from .senders import SendError
 from .senders.script import argv
 from .store import APPROVED, FAILED, SENDING, SENT, Draft, Store
@@ -92,6 +93,8 @@ class Dispatcher:
             return self._failed(d, SendError("kind_not_configured", permanent=True))
         if self._approves(d, kind):
             return self._failed(d, SendError("refused:pr_approval", permanent=True))
+        if code := refusal(self.settings, kind):
+            return self._failed(d, SendError(f"refused:{code}", permanent=True))
         sender = self.senders.get(kind.system)
         if sender is None:
             return self._failed(d, SendError(f"no_sender:{kind.system}", permanent=True))

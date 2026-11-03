@@ -23,6 +23,13 @@ validates it first (``check.py``).
     per = "24h"                    # ... in this window; a draft over it waits for the window, never dropped
     patience = "48h"               # how long a draft may wait for a limit before the outbox says so
 
+What the Outbox may write to is not here: ``writes`` in the owner's shared accounts.toml
+(``accounts.py``, default ``["github"]``) lists the systems that may be written to, and a kind of
+any other system is **off**: it is checked like any other, reported as off with the reason, and a
+draft of it is recorded as refused, never sent. A ``writes`` key in ``[outbox]`` is refused, so the
+tools that edit this file cannot turn a system on. A script kind says which system it writes to
+(``system = "jira"``), or it is off.
+
 A token is never in this file: a ``token`` key is refused (``credentials.py`` and ``accounts.py``
 say where they come from). Every key of a kind is checked, and an unknown one is refused, so a typo
 is caught."""
@@ -30,10 +37,11 @@ is caught."""
 from __future__ import annotations
 
 import ipaddress
+import json
 import re
 import shlex
 import urllib.parse
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -41,7 +49,7 @@ from orchestra.config import ConfigError, parse_duration
 
 from . import DEFAULT_OWNER, MACHINE
 from . import actions as X
-from .accounts import Accounts, AccountsError, person_in_map
+from .accounts import WRITES_DEFAULT, Accounts, AccountsError, person_in_map
 from .kinds import SPECS, SYSTEMS, Spec
 from .templates import placeholders
 
@@ -51,10 +59,12 @@ _SOURCE = re.compile(r"^[A-Za-z0-9_.:-]+(/[A-Za-z0-9_.:-]+)?$")
 _KIND = re.compile(r"^[a-z0-9][a-z0-9_-]*(\.[a-z0-9_-]+)*$")
 _KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 KIND_KEYS = {"sender", "template", "payload", "command", "timeout", "target", "approval", "limit", "per", "ping",
-             "action", "patience"}
+             "action", "patience", "system"}
 TOP_KEYS = {"owner", "people", "merge_labels", "host", "port", "kinds", *SYSTEMS}
 API_PATIENCE_S = 3600.0
 JIRA_CREATE_NEEDS = ("project", "issuetype", "summary")
+WRITE_SYSTEMS = ("github", "jira", "slack", "discord")    # what a script kind may say it writes to, or "none"
+NO_WRITE = "none"
 
 
 @dataclass(frozen=True)
@@ -72,6 +82,13 @@ class Kind:
     ping: bool = False                # it reaches people: a draft must name its recipients
     action: str = ""                  # what it does (actions.py): the sender's, or a script's declared one
     patience: float = 0.0             # how long a draft may wait for a rate limit before it is unresolvable
+    writes_to: str | None = None      # script: the system it says it writes to (WRITE_SYSTEMS or "none")
+    off: str | None = None            # why it is off (its system is read-only), or None
+
+    @property
+    def writes_system(self) -> str | None:
+        """The system a send of this kind writes to: the sender's, or a script's declared one (None: undeclared)."""
+        return self.writes_to if self.sender == "script" else self.spec.system
 
     @property
     def spec(self) -> Spec:
@@ -98,6 +115,48 @@ class Settings:
     max_attempts: int = 8
     owner_from: str = "default"       # where the owner's id came from: config, accounts, identity map, default
     merge_labels: tuple[str, ...] = ()
+    writes: tuple[str, ...] = WRITES_DEFAULT     # the systems that may be written to (accounts.toml)
+    writes_from: str = "default"                 # the file that named them, or "default"
+
+    @property
+    def off(self) -> dict[str, str]:
+        return {k.name: k.off for k in self.kinds.values() if k.off}
+
+
+def read_only(k: Kind, writes: tuple[str, ...] | set[str] | frozenset[str]) -> str | None:
+    """The refusal code of a send of ``k`` under ``writes`` (``read_only:<system>``), or None when it may write."""
+    system = k.writes_system
+    if system is None:
+        return "read_only:undeclared"
+    if system == NO_WRITE or system in writes:
+        return None
+    return f"read_only:{system}"
+
+
+def why_off(k: Kind, writes: tuple[str, ...], where: str) -> str | None:
+    """A sentence saying why ``k`` is off, or None when it is on."""
+    if read_only(k, writes) is None:
+        return None
+    if k.writes_system is None:
+        return (f'{k.name} is off: a script kind must say which system it writes to (system = one of '
+                f'{", ".join(WRITE_SYSTEMS)} or "none"), and the Outbox cannot tell otherwise')
+    return (f"{k.name} is off: it writes to {k.writes_system}, which is read-only (writes = {json.dumps(list(writes))} in {where}); "
+            "only the owner can turn a system on, in that file")
+
+
+def live_writes() -> tuple[str, ...]:
+    """``writes`` as the owner's accounts.toml says now; the default when it cannot be read."""
+    try:
+        return Accounts.load().writes
+    except AccountsError:
+        return WRITES_DEFAULT
+
+
+def refusal(settings: Settings, k: Kind) -> str | None:
+    """Why a draft of ``k`` may not be sent (``read_only:<system>``): its system is not in ``writes``
+    as the settings were read, or as the owner's accounts.toml says now. Either refuses."""
+    return read_only(k, settings.writes) or read_only(k, live_writes())
+
 
 
 def section(raw: dict[str, Any]) -> dict | None:
@@ -140,6 +199,8 @@ def _system(raw: dict, system: str, accounts: Accounts) -> System | None:
         raise ConfigError(f"[outbox.{system}] must be a table")
     if "token" in s:
         raise ConfigError(f"[outbox.{system}] token is refused: a token never goes in orchestra.toml (use token_file)")
+    if "writes" in s:
+        raise ConfigError(f"[outbox.{system}] writes is refused: {WRITES_REFUSED}")
     unknown = set(s) - {"api", "token_file"}
     if unknown:
         raise ConfigError(f"[outbox.{system}] has unknown keys: {', '.join(sorted(unknown))} (it takes api, token_file)")
@@ -147,6 +208,10 @@ def _system(raw: dict, system: str, accounts: Accounts) -> System | None:
     if tf is not None and not isinstance(tf, str):
         raise ConfigError(f"[outbox.{system}] token_file must be a path")
     return System(_api(system, s.get("api"), accounts), Path(tf).expanduser() if tf else None)
+
+
+WRITES_REFUSED = ("which systems may be written to is the owner's, set only as writes in the shared "
+                  "accounts.toml (~/.config/orchestra/accounts.toml), never in orchestra.toml or its overlay")
 
 
 def _strings(where: str, value: object) -> None:
@@ -228,6 +293,12 @@ def kind(name: str, s: object, systems: dict[str, System]) -> Kind:
         raise ConfigError(f"{where} target is only for the script sender (a built-in sender knows its target)")
     if not isinstance(target, list) or not all(isinstance(k, str) and _KEY.match(k) for k in target):
         raise ConfigError(f"{where} target must be a list of key names")
+    writes_to = s.get("system")
+    if sender != "script" and writes_to is not None:
+        raise ConfigError(f"{where} system is only for the script sender (a built-in sender's system is known)")
+    if writes_to is not None and writes_to not in (*WRITE_SYSTEMS, NO_WRITE):
+        raise ConfigError(f'{where} system must be the system the script writes to: one of {", ".join(WRITE_SYSTEMS)} '
+                          f'or "none"')
     approval = s.get("approval", "always")
     if approval not in ("always", "auto"):
         raise ConfigError(f'{where} approval must be "always" or "auto"')
@@ -249,7 +320,7 @@ def kind(name: str, s: object, systems: dict[str, System]) -> Kind:
     if patience < 60:
         raise ConfigError(f"{where} patience must be at least 60s")
     return Kind(name, sender, template, payload, command, timeout, tuple(target), approval, limit, per, ping, action,
-                patience)
+                patience, writes_to)
 
 
 def people_file(raw: dict[str, Any], repo_root: Path | None) -> Path | None:
@@ -294,7 +365,10 @@ def problems(raw: dict[str, Any], repo_root: Path | None = None,
         except AccountsError as e:
             errors.append(f"the shared accounts file: {e}")
             accounts = Accounts()
-    unknown = set(s) - TOP_KEYS
+    for where, t in (("[outbox]", s), ("orchestra.toml", raw)):
+        if "writes" in t:
+            errors.append(f"{where} writes is refused: {WRITES_REFUSED}")
+    unknown = set(s) - TOP_KEYS - {"writes"}
     if unknown:
         errors.append(f"[outbox] has unknown keys: {', '.join(sorted(unknown))}")
     owner, owner_from = _owner(s, raw, repo_root, accounts)
@@ -331,8 +405,11 @@ def problems(raw: dict[str, Any], repo_root: Path | None = None,
             errors.append(str(e))
     if errors:
         return None, errors
+    where = str(accounts.path) if accounts.writes_set else "the default; the shared accounts.toml names none"
+    kinds = {n: replace(k, off=why_off(k, accounts.writes, where)) for n, k in kinds.items()}
     return Settings(owner, host, port, systems, kinds, owner_from=owner_from,
-                    merge_labels=tuple(x.strip() for x in labels)), []
+                    merge_labels=tuple(x.strip() for x in labels), writes=accounts.writes,
+                    writes_from=str(accounts.path) if accounts.writes_set else "default"), []
 
 
 def settings(raw: dict[str, Any], repo_root: Path | None = None, accounts: Accounts | None = None) -> Settings:

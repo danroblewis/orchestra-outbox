@@ -10,6 +10,10 @@
 #
 # Addresses and accounts come from ~/.config/orchestra/accounts.toml (SPEC §9): Jira's api must be
 # there (or in [outbox.jira] api). Tokens come from ~/.config/orchestra/tokens/.
+#
+# Every one of them writes to Slack or Jira, which are read-only by default: they stay off (the
+# check lists them under "off") until the owner adds the system to writes in accounts.toml
+# (writes = ["github", "jira", "slack"]). Only the owner turns a system on.
 
 [outbox]
 merge_labels = ["SAIL"]

@@ -116,7 +116,8 @@ def test_the_specs_example_configuration_passes_the_check():
     out = check(tomllib.loads(block), Path("/nonexistent"))
     assert out["ok"], out["errors"]
     assert out["kinds"]["review.ping"] == {"sender": "slack.reply", "approval": "auto", "limit": 1, "per": 86400.0,
-                                           "ping": True, "action": "slack.post"}
+                                           "ping": True, "action": "slack.post", "system": "slack", "off": None}
+    assert out["kinds"]["port.request"]["system"] == "github" and not out["off"]
 
 
 def test_no_outbox_section_is_no_problem_for_the_plugin_check(tmp_path):

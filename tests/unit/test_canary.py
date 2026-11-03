@@ -15,7 +15,7 @@ def test_no_content_on_the_bus_in_the_metrics_or_the_logs(make_project, tmp_path
                                                            github, jira):
     caplog.set_level(logging.DEBUG)
     project = make_project('\n[outbox.kinds."echo"]\nsender = "script"\ncommand = ["scripts/echo.sh"]\n'
-                           'action = "other"\n[outbox.kinds."pr.open"]\nsender = "github.pr_open"\n'
+                           'action = "other"\nsystem = "none"\n[outbox.kinds."pr.open"]\nsender = "github.pr_open"\n'
                            '[outbox.kinds."upstream.issue"]\nsender = "github.issue_create"\n'
                            '[outbox.kinds."nudge"]\nsender = "slack.message"\napproval = "auto"\nlimit = 0\n'
                            'patience = "1m"\n')

@@ -114,6 +114,7 @@ def test_the_five_starting_kinds_pass_the_check_all_approved_by_the_owner(accoun
                                     "slack.thread_reply"]
     assert {v["approval"] for v in out["kinds"].values()} == {"always"}
     assert out["kinds"]["review.requested"]["ping"] is True and out["warnings"] == []
+    assert set(out["off"]) == set(out["kinds"])          # Slack and Jira: read-only until the owner lists them
     assert main(["example"]) == 0 and capsys.readouterr().out == EXAMPLE.read_text()
     (tmp_path / "proposed.toml").write_text(EXAMPLE.read_text())
     assert main(["check", "--file", str(tmp_path / "proposed.toml"), "--repo", str(tmp_path)]) == 0

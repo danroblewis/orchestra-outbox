@@ -41,6 +41,11 @@ broken without updating the spec and saying so in the commit. Orchestra's own ru
    backlog, the drafters behind it publish `outbox.rate_limit.unresolvable` (SPEC §5.3, §7.1), a
    contract the Supervisor and programs read: change its fields only with SPEC §7.1.
 
+10. **Read-only unless the owner lists the system** (SPEC §4.6). A send is allowed only to a
+    system in `writes` of the owner's `accounts.toml` (default `["github"]`), checked at the check,
+    at drafting and at every send. Never read `writes` from `orchestra.toml` or the overlay, never
+    exempt a sender, a fake or a script from it, and never guess a script's system.
+
 ## Conventions
 
 - Python 3.12+, `uv` for everything. `uv sync --extra dev`, then `set -o pipefail; uv run python
