@@ -117,10 +117,11 @@ class Settings:
     merge_labels: tuple[str, ...] = ()
     writes: tuple[str, ...] = WRITES_DEFAULT     # the systems that may be written to (accounts.toml)
     writes_from: str = "default"                 # the file that named them, or "default"
+    broken: dict[str, str] = field(default_factory=dict)    # kinds that do not pass the check: off, and why
 
     @property
     def off(self) -> dict[str, str]:
-        return {k.name: k.off for k in self.kinds.values() if k.off}
+        return {**{k.name: k.off for k in self.kinds.values() if k.off}, **self.broken}
 
 
 def read_only(k: Kind, writes: tuple[str, ...] | set[str] | frozenset[str]) -> str | None:
@@ -355,9 +356,22 @@ def problems(raw: dict[str, Any], repo_root: Path | None = None,
     ``accounts`` is the owner's shared accounts file (default: read it now, ``accounts.py``). With
     no ``[outbox]`` there is no problem (and no settings): this is also the plugin's
     ``Plugin.check``, which judges only the Outbox's own section, so removing it is allowed."""
+    if section(raw) is None:
+        return None, []
+    got, errors = standing(raw, repo_root, accounts)
+    return (None, errors) if errors else (got, [])
+
+
+def standing(raw: dict[str, Any], repo_root: Path | None = None,
+             accounts: Accounts | None = None) -> tuple[Settings, list[str]]:
+    """The settings the sender runs with, and every problem found: never a refusal to start. What
+    does not pass is left out with its problem reported: a bad top-level value takes its default, a
+    bad system's table is not configured, and a kind that does not pass is **off**, named in
+    ``Settings.broken`` with the reason (``Settings.off`` lists it), so the other kinds work and the
+    sender stays up serving its metrics. ``problems`` is the same reading, strict: the check."""
     s = section(raw)
     if s is None:
-        return None, []
+        return Settings(), [NO_SECTION]
     errors: list[str] = []
     if accounts is None:
         try:
@@ -374,6 +388,7 @@ def problems(raw: dict[str, Any], repo_root: Path | None = None,
     owner, owner_from = _owner(s, raw, repo_root, accounts)
     if not isinstance(owner, str) or not _SOURCE.match(owner) or owner == MACHINE:
         errors.append(f"[outbox] owner must be a source name other than {MACHINE!r}")
+        owner, owner_from = DEFAULT_OWNER, "default"
     labels = s.get("merge_labels", [])
     if not isinstance(labels, list) or not all(isinstance(x, str) and x.strip() for x in labels):
         errors.append("[outbox] merge_labels must be a list of label names")
@@ -383,9 +398,11 @@ def problems(raw: dict[str, Any], repo_root: Path | None = None,
     host = s.get("host", "127.0.0.1")
     if not isinstance(host, str) or not _loopback(host):
         errors.append("[outbox] host must be a loopback address: the API is for machines on this computer")
+        host = "127.0.0.1"
     port = s.get("port", DEFAULT_PORT)
     if not isinstance(port, int) or isinstance(port, bool) or not 0 <= port <= 65535:
         errors.append("[outbox] port must be 0..65535")
+        port = DEFAULT_PORT
     systems: dict[str, System] = {}
     for name in SYSTEMS:
         try:
@@ -395,6 +412,7 @@ def problems(raw: dict[str, Any], repo_root: Path | None = None,
             errors.append(str(e))
     raw_kinds = s.get("kinds", {})
     kinds: dict[str, Kind] = {}
+    broken: dict[str, str] = {}
     if not isinstance(raw_kinds, dict):
         errors.append("[outbox.kinds] must be a table of kinds")
         raw_kinds = {}
@@ -403,13 +421,12 @@ def problems(raw: dict[str, Any], repo_root: Path | None = None,
             kinds[name] = kind(name, v, systems)
         except ConfigError as e:
             errors.append(str(e))
-    if errors:
-        return None, errors
+            broken[name] = f"{name} is off: {e}"
     where = str(accounts.path) if accounts.writes_set else "the default; the shared accounts.toml names none"
     kinds = {n: replace(k, off=why_off(k, accounts.writes, where)) for n, k in kinds.items()}
     return Settings(owner, host, port, systems, kinds, owner_from=owner_from,
                     merge_labels=tuple(x.strip() for x in labels), writes=accounts.writes,
-                    writes_from=str(accounts.path) if accounts.writes_set else "default"), []
+                    writes_from=str(accounts.path) if accounts.writes_set else "default", broken=broken), errors
 
 
 def settings(raw: dict[str, Any], repo_root: Path | None = None, accounts: Accounts | None = None) -> Settings:

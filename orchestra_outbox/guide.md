@@ -56,9 +56,11 @@ page and does nothing.
 (`Plugin.check`: the errors of `orchestra_outbox.config.problems(raw, repo_root)`) by itself, on
 every change: pass no `check=`. A refusal starts with `outbox:`. `problems` returns
 `(settings, errors)`. Each error is one sentence that names the key, and every error is reported
-at once. An absent `[outbox]` is no problem, so removing it is allowed (that is the human's call). Errors are what the machine
-would refuse to start with. If the running machine rereads a file that fails, it logs the error and
-keeps the last good version, so a bad edit silently changes nothing.
+at once. An absent `[outbox]` is no problem, so removing it is allowed (that is the human's call). Errors are what an edit is
+refused for. The machine never refuses to start on them: it logs each one and runs with what
+passes, a kind with an error off (listed under `off`). If the running machine rereads a file that
+fails after a good one, it logs the error and keeps the last good version, so a bad edit silently
+changes nothing.
 
 `orchestra_outbox.check.check(raw, repo_root)` returns the same errors plus **warnings**, which do
 not block the edit but predict a failed send:
