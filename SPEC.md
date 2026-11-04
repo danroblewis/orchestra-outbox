@@ -151,7 +151,11 @@ owner's account ids are in neither: they are the shared accounts directory's (§
 may be written to: that is `writes` in the shared `accounts.toml` (§4.6), and a `writes` key here
 is refused. **Unknown keys are refused**, so a typo is an error, not a
 silent default. The machine re-reads the section when the file changes; a version that fails the
-check is logged and the last good one stands; the web server re-reads it on every request.
+check is logged and the last good one stands; the web server re-reads it on every request. The
+machine never exits on a configuration it does not like: started on one that fails the check, it
+logs each error and runs with what passes, a kind with an error **off** (the check's `off` names it
+too), a bad top-level value at its default and an unreadable accounts file as none; a draft of an
+off kind is refused, and a later version takes effect even with errors left, until one passes.
 
 ### 4.1 `[outbox]`
 

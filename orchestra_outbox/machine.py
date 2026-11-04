@@ -7,6 +7,8 @@ be sent (``dispatch.py``); every few seconds it reviews the rate limits and has 
 an unresolvable one say so (``limits.py``). It re-reads ``[outbox]`` when orchestra.toml, the
 private overlay or the shared accounts file changes, so a kind the Supervisor adds is draftable
 within a second; a configuration that fails the check is logged and the last good one stands. It
+never exits on a configuration it does not like: what fails the check is logged, a kind that does
+not pass is off (``config.standing``), and it starts and serves its metrics with the rest. It
 holds every write token, and only it does: the web server never sends."""
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ from orchestra.config import ConfigError, load_project
 from orchestra.events import Events
 
 from . import MACHINE, PACKAGE, accounts, audit, limits, measures
-from .config import Settings, settings
+from .config import Settings, standing
 from .dispatch import Dispatcher
 from .senders import build
 from .server import Server
@@ -35,6 +37,7 @@ from .store import Store
 log = logging.getLogger("orchestra_outbox")
 TICK_S = 0.5
 REVIEW_S = 5.0
+LOAD_RETRY_S = 5.0
 
 
 def endpoint_file(project):
@@ -45,7 +48,9 @@ class Machine:
     def __init__(self, project, *, clock: Callable[[], float] = time.time, events: Events | None = None):
         self.project, self.clock = project, clock
         self.store = Store.for_project(project, clock)
-        self.settings: Settings = settings(project.config.raw, project.repo_root)
+        self.settings: Settings
+        self.settings, self.problems = standing(project.config.raw, project.repo_root)
+        self._report(self.problems)
         self.events = events or Events.for_project(project, source=MACHINE)
         self.senders = build(self.settings, project.repo_root)
         self.outbox = Outbox(self.store, self.settings, clock)
@@ -70,17 +75,29 @@ class Machine:
         self._stamp = stamp
         try:
             self.project.reload_config()
-            new = settings(self.project.config.raw, self.project.repo_root)
+            new, found = standing(self.project.config.raw, self.project.repo_root)
         except (ConfigError, OSError, ValueError) as e:
-            log.warning("outbox: orchestra.toml changed, but [outbox] does not pass the check; the last good "
-                        "configuration stands: %s", e)
+            log.warning("outbox: orchestra.toml changed, but cannot be read; the configuration in use stands: %s", e)
             return False
+        if found and not self.problems:
+            log.warning("outbox: orchestra.toml changed, but [outbox] does not pass the check; the last good "
+                        "configuration stands: %s", "; ".join(found))
+            return False
+        if found != self.problems:
+            self._report(found)
+        self.problems = found
         if new.systems != self.settings.systems:
             self.senders = build(new, self.project.repo_root)
             self.dispatcher.senders = self.senders
         self.settings = self.outbox.settings = self.dispatcher.settings = new
         log.info("outbox: configuration reloaded: kinds %s", ", ".join(sorted(new.kinds)) or "none")
         return True
+
+    @staticmethod
+    def _report(found: list[str]) -> None:
+        """Each problem in the sender's log (the Core page's log of this process); never an exit."""
+        for p in found:
+            log.warning("outbox: configuration problem (the check refuses it; what it names is off): %s", p)
 
     def announce(self) -> None:
         log_file = os.environ.get("ORCHESTRA_MACHINE_LOG")
@@ -162,15 +179,18 @@ def main(argv: list[str]) -> int:
         print("usage: python -m orchestra_outbox run", file=sys.stderr)
         return 2
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-    project = load_project()
-    try:
-        machine = Machine(project)
-    except ConfigError as e:
-        print(f"outbox: {e}", file=sys.stderr)
-        return 2
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
+    machine = None
+    while machine is None and not stop.is_set():
+        try:
+            machine = Machine(load_project())
+        except (ConfigError, OSError, ValueError) as e:      # orchestra.toml or the overlay cannot be read at all
+            log.warning("outbox: the configuration cannot be read; trying again in %gs: %s", LOAD_RETRY_S, e)
+            stop.wait(LOAD_RETRY_S)
+    if machine is None:
+        return 0
     machine.run(stop)
     log.info("outbox: stopped")
     return 0

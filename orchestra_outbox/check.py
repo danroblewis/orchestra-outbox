@@ -13,7 +13,9 @@ Exit 0 when the configuration is valid, 1 when it is not, 2 when it cannot be re
 ``{"ok": bool, "errors": [...], "warnings": [...], "owner": id, "owner_from": where,
 "writes": [systems], "writes_from": file or "default", "off": {name: why},
 "kinds": {name: {sender, approval, limit, per, ping, action, system, off}}}``.
-Errors are what the outbox would refuse to start with. Warnings are what would make a send fail
+Errors are what a change is refused for; the running outbox never refuses to start on them: it
+reports them in its log and runs with what passes, a kind with an error **off** (named in ``off``
+here too, with the error). Warnings are what would make a send fail
 later (a script that is not there or not executable, a token file with loose permissions); they do
 not fail the check, because the target repository or the token may arrive after the config.
 A kind whose system is read-only (``writes`` in the owner's accounts.toml) is neither: it is
@@ -30,7 +32,7 @@ import tomllib
 from pathlib import Path
 
 from . import actions as X
-from .config import NO_SECTION, problems
+from .config import NO_SECTION, problems, section, standing
 from .senders.script import argv
 
 EXAMPLE = Path(__file__).parent / "examples" / "owner-kinds.toml"
@@ -68,7 +70,8 @@ def check(raw: dict, repo_root: Path) -> dict:
     s, errors = problems(raw, repo_root)
     if s is None:
         errors = errors or [NO_SECTION]
-        return {"ok": False, "errors": errors, "warnings": [], "kinds": {}}
+        off = standing(raw, repo_root)[0].off if section(raw) is not None else {}
+        return {"ok": False, "errors": errors, "warnings": [], "off": off, "kinds": {}}
     return {"ok": True, "errors": [], "warnings": warnings(s, repo_root), "owner": s.owner, "owner_from": s.owner_from,
             "writes": list(s.writes), "writes_from": s.writes_from, "off": s.off,
             "kinds": {k.name: {"sender": k.sender, "approval": k.approval, "limit": k.limit, "per": k.per,

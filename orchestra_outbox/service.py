@@ -60,6 +60,8 @@ class Outbox:
             raise DraftError(f"{drafter!r} cannot draft: the outbox and the owner never draft for themselves")
         name = body.get("kind")
         k = self.settings.kinds.get(name) if isinstance(name, str) else None
+        if k is None and name in self.settings.broken:
+            raise DraftError(f"{self.settings.broken[name]} (fix [outbox.kinds] with the check)")
         if k is None:
             known = ", ".join(sorted(self.settings.kinds)) or "none"
             raise DraftError(f"unknown kind {name!r}: this project's kinds are {known} ([outbox.kinds])")
